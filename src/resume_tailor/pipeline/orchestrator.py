@@ -20,6 +20,13 @@ from resume_tailor.pipeline.resume_writer import ResumeWriter
 from resume_tailor.pipeline.strategy_planner import StrategyPlanner
 from resume_tailor.templates.loader import ResumeTemplate, load_template
 
+TEMPLATE_MAP: dict[str, str] = {
+    "tech": "korean_developer",
+    "business": "korean_business",
+    "general": "korean_standard",
+    "design": "korean_standard",
+}
+
 
 @dataclass
 class PipelineResult:
@@ -67,6 +74,7 @@ class PipelineOrchestrator:
         company_profile: CompanyProfile | None = None,
         on_phase: callable | None = None,
         language: str = "ko",
+        role_category: str = "auto",
     ) -> PipelineResult:
         """Run the full tailoring pipeline.
 
@@ -78,9 +86,10 @@ class PipelineOrchestrator:
             company_profile: Pre-cached company profile (skips research).
             on_phase: Optional callback(phase_name, detail) for progress.
             language: Output language - "ko" for Korean, "en" for English.
+            role_category: Role preset - "auto" to detect from JD, or
+                "tech"/"business"/"design"/"general".
         """
         start = time.monotonic()
-        template = load_template(template_name)
 
         def _notify(phase: str, detail: str = ""):
             if on_phase:
@@ -100,12 +109,25 @@ class PipelineOrchestrator:
 
         _notify("phase1_done", f"회사: {company.name}, 포지션: {job.title}")
 
+        # --- Resolve role_category ---
+        effective_category = job.role_category if role_category == "auto" else role_category
+
+        # Auto-map template when using the default template_name
+        if template_name == "korean_standard":
+            template_name = TEMPLATE_MAP.get(effective_category, "korean_standard")
+
+        template = load_template(template_name)
+
         # --- Phase 2: Sequential strategy → write → QA ---
         _notify("phase2", "전략 수립 중")
-        strategy = await self.strategy_planner.plan(company, job, resume_text, language=language)
+        strategy = await self.strategy_planner.plan(
+            company, job, resume_text, language=language, role_category=effective_category,
+        )
 
         _notify("writing", "이력서 작성 중")
-        resume = await self.resume_writer.write(strategy, resume_text, template, language=language)
+        resume = await self.resume_writer.write(
+            strategy, resume_text, template, language=language, role_category=effective_category,
+        )
 
         _notify("qa", "품질 검수 중")
         qa = await self.qa_reviewer.review(
@@ -116,7 +138,9 @@ class PipelineOrchestrator:
         rewrites = 0
         if not qa.pass_ and rewrites < self.max_rewrites:
             _notify("rewrite", f"QA 점수 {qa.overall_score} < {self.qa_threshold}, 재작성 중")
-            resume = await self.resume_writer.write(strategy, resume_text, template, language=language)
+            resume = await self.resume_writer.write(
+                strategy, resume_text, template, language=language, role_category=effective_category,
+            )
             qa = await self.qa_reviewer.review(
                 resume.full_markdown, resume_text, jd_text
             )
@@ -133,6 +157,7 @@ class PipelineOrchestrator:
             qa=qa,
             rewrites=rewrites,
             elapsed_seconds=elapsed,
+            metadata={"role_category": effective_category},
         )
 
     async def research_only(self, company_name: str) -> CompanyProfile:

@@ -18,14 +18,20 @@ SYSTEM_PROMPT = """\
   "tone": "formal/casual/technical",
   "key_responsibilities": ["핵심 업무 1", "핵심 업무 2"],
   "preferred_qualifications": ["우대사항 1", "우대사항 2"],
-  "years_experience": "요구 경력 (예: 3-5년)"
+  "years_experience": "요구 경력 (예: 3-5년)",
+  "role_category": "tech/business/design/general 중 하나"
 }
 
 주의사항:
 - 채용공고가 한국어든 영어든 상관없이 분석합니다. 영문 JD의 키워드는 영어 그대로 추출하세요.
 - ats_keywords는 이력서에 반드시 포함되어야 할 키워드를 추출합니다
 - hard_skills와 soft_skills를 명확히 구분합니다
-- 채용공고에 명시되지 않은 내용은 추론하지 마세요"""
+- 채용공고에 명시되지 않은 내용은 추론하지 마세요
+- role_category 분류 기준:
+  tech: 소프트웨어 개발, 데이터 엔지니어링, DevOps, QA, 인프라
+  business: 전략기획, PM, 컨설팅, 사업개발, 마케팅, 경영지원
+  design: UX/UI, 프로덕트 디자인, 그래픽 디자인, 브랜드
+  general: 위에 해당하지 않는 직군"""
 
 
 class JDAnalyst:

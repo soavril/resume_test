@@ -7,6 +7,13 @@ from resume_tailor.models.company import CompanyProfile
 from resume_tailor.models.job import JobAnalysis
 from resume_tailor.models.strategy import ResumeStrategy
 
+STRATEGY_HINTS = {
+    "tech": "기술적 depth, 프로젝트 임팩트, 시스템 설계 역량, 오픈소스 기여를 강조하세요.",
+    "business": "규모감(예산/인원/매출), 리더십, 크로스펑셔널 협업, 비즈니스 임팩트를 강조하세요.",
+    "design": "디자인 프로세스, 사용자 리서치, 비즈니스 임팩트, 포트폴리오 연계를 강조하세요.",
+    "general": "",
+}
+
 SYSTEM_PROMPT = """\
 당신은 이력서 전략 컨설턴트입니다. 회사 정보, 채용공고 분석, 지원자의 이력서를 종합하여 최적의 이력서 맞춤화 전략을 수립합니다.
 
@@ -57,11 +64,18 @@ class StrategyPlanner:
         resume_text: str,
         *,
         language: str = "ko",
+        role_category: str = "general",
     ) -> ResumeStrategy:
         """Create a tailoring strategy based on company, JD, and resume."""
         lang_note = ""
         if language == "en":
             lang_note = "\n\n**The final resume will be written in English. Plan keywords and tone accordingly.**"
+
+        role_hint = STRATEGY_HINTS.get(role_category, "")
+        if role_hint:
+            role_hint_section = f"\n\n## 직군별 전략 가이드\n{role_hint}"
+        else:
+            role_hint_section = ""
 
         prompt = f"""다음 정보를 바탕으로 이력서 맞춤화 전략을 수립하세요.{lang_note}
 
@@ -85,7 +99,7 @@ class StrategyPlanner:
 
 ## 지원자 이력서
 {resume_text}
-
+{role_hint_section}
 JSON 형식으로만 응답하세요."""
 
         data = await self.llm.generate_json(

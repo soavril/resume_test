@@ -154,6 +154,16 @@ def _mode_resume_tailor():
 
     company_name = st.text_input("회사명", placeholder="예: 삼성전자")
 
+    role_preset = st.radio(
+        "직군",
+        ["자동 감지", "개발/엔지니어링", "비즈니스/전략"],
+        index=0,
+        horizontal=True,
+        help="채용공고를 분석하여 직군을 자동 감지합니다. 수동 선택도 가능합니다.",
+    )
+    PRESET_MAP = {"자동 감지": "auto", "개발/엔지니어링": "tech", "비즈니스/전략": "business"}
+    role_category = PRESET_MAP[role_preset]
+
     jd_text = st.text_area(
         "채용공고 붙여넣기",
         height=200,
@@ -195,27 +205,33 @@ def _mode_resume_tailor():
         )
 
         # Run pipeline with progress
-        with st.status("이력서 생성 중...", expanded=True) as status:
+        phases = {
+            "phase1": (0.15, "회사 리서치 + 채용공고 분석 중..."),
+            "phase1_done": (0.25, "분석 완료"),
+            "phase2": (0.35, "전략 수립 중..."),
+            "writing": (0.55, "이력서 작성 중..."),
+            "qa": (0.75, "품질 검수 중..."),
+            "rewrite": (0.85, "재작성 중..."),
+            "done": (1.0, "완료!"),
+        }
+        progress_bar = st.progress(0, text="준비 중...")
 
-            def on_phase(phase: str, detail: str):
-                status.update(label=detail)
-                st.write(detail)
+        def on_phase(phase: str, detail: str):
+            pct, label = phases.get(phase, (0, detail))
+            progress_bar.progress(pct, text=detail)
 
-            result = asyncio.run(
-                orchestrator.run(
-                    company_name=company_name,
-                    jd_text=jd_text,
-                    resume_text=resume_text,
-                    template_name="korean_standard",
-                    company_profile=cached_profile,
-                    on_phase=on_phase,
-                    language=lang_code,
-                )
+        result = asyncio.run(
+            orchestrator.run(
+                company_name=company_name,
+                jd_text=jd_text,
+                resume_text=resume_text,
+                company_profile=cached_profile,
+                on_phase=on_phase,
+                language=lang_code,
+                role_category=role_category,
             )
-            status.update(
-                label=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초",
-                state="complete",
-            )
+        )
+        progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
 
         # Cache company profile
         if not cached_profile:
@@ -226,6 +242,20 @@ def _mode_resume_tailor():
         output_dir.mkdir(parents=True, exist_ok=True)
         md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
         md_path.write_text(result.resume.full_markdown, encoding="utf-8")
+
+        # Show detected role and completion status
+        role_labels = {"tech": "개발/엔지니어링", "business": "비즈니스/전략", "design": "디자인", "general": "일반"}
+        detected = result.metadata.get("role_category", "general")
+        st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
+
+        # Markdown download
+        st.download_button(
+            label="마크다운 다운로드",
+            data=result.resume.full_markdown.encode("utf-8"),
+            file_name=f"{company_name}_{result.job.title}.md".replace(" ", "_"),
+            mime="text/markdown",
+            type="secondary",
+        )
 
         # Display results in tabs
         tab_resume, tab_qa, tab_company = st.tabs(

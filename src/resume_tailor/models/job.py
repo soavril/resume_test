@@ -15,3 +15,4 @@ class JobAnalysis(BaseModel):
     key_responsibilities: list[str]
     preferred_qualifications: list[str]
     years_experience: str | None = None
+    role_category: str = "general"  # "tech", "business", "design", "general"

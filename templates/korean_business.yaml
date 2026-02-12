@@ -1,0 +1,26 @@
+name: "한국 비즈니스/전략 이력서"
+sections:
+  - id: "header"
+    label: "인적사항"
+    required: true
+    fields: [name, email, phone, links]
+  - id: "summary"
+    label: "자기소개"
+    required: true
+    max_length: 500
+    content_type: "paragraph"
+  - id: "experience"
+    label: "경력사항"
+    required: true
+    content_type: "entries"
+    sort_order: "reverse_chronological"
+  - id: "core_competencies"
+    label: "핵심역량"
+    required: true
+    content_type: "categorized_list"
+  - id: "education"
+    label: "학력"
+    required: true
+  - id: "certifications"
+    label: "자격증/수상"
+    required: false

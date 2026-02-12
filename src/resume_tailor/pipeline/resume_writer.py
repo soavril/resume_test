@@ -7,6 +7,23 @@ from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.models.strategy import ResumeStrategy
 from resume_tailor.templates.loader import ResumeTemplate
 
+EXPERIENCE_FORMAT = {
+    "tech": """각 경력 항목은 프로젝트 단위로 구분하여 STAR 형식으로 작성합니다.
+프로젝트명을 볼드 표기하고, S(상황)-T(과제)-A(행동)-R(결과) 구조를 따르되 기술적 의사결정과 정량 성과를 강조합니다.
+사용 기술은 Action에 자연스럽게 포함합니다.""",
+
+    "business": """각 경력 항목은 '주요업무 → 성과' 구조로 작성합니다.
+주요업무를 볼드 표기하고, 그 아래 bullet point로 구체적 성과를 나열합니다.
+업무 규모(예산, 인원, 범위)와 정량 결과(매출, 비용절감, 전환율)를 강조합니다.
+리더십과 크로스펑셔널 협업 경험을 부각합니다.""",
+
+    "design": """각 경력 항목은 '프로젝트 → 프로세스 → 임팩트' 구조로 작성합니다.
+프로젝트명을 볼드 표기하고, 디자인 프로세스(리서치, 와이어프레임, 프로토타입, 테스트)와 비즈니스 임팩트를 강조합니다.""",
+
+    "general": """각 경력 항목은 '주요업무 → 성과' 구조를 기본으로 하되,
+프로젝트성 업무는 STAR 형식을 병행할 수 있습니다. 업무 범위와 성과를 균형있게 서술합니다.""",
+}
+
 SYSTEM_PROMPT_KO = """\
 당신은 전문 이력서 작성가입니다. 주어진 전략과 템플릿 구조에 따라 최적화된 이력서를 Markdown으로 작성합니다.
 
@@ -15,18 +32,19 @@ SYSTEM_PROMPT_KO = """\
 2. 지원자의 원본 이력서에 있는 사실만 사용합니다. 새로운 경험을 만들지 마세요.
 3. 전략의 강조 포인트와 키워드를 자연스럽게 반영합니다.
 4. 원본에 구체적 수치가 있으면 그대로 사용합니다. 원본에 없는 수치를 추정하거나 부풀리지 마세요.
-5. 각 경력 항목은 STAR 형식(Situation-Task-Action-Result)으로 작성합니다.
+5. {experience_format}
 6. ATS 최적화를 위해 키워드를 자연스럽게 포함합니다.
 7. **과장 금지**: "혁신적", "획기적", "탁월한", "독보적" 같은 수식어를 사용하지 마세요. 사실 기반의 담백한 톤으로 작성하세요.
 8. 원본 이력서의 표현 수준과 톤을 유지하세요. 원본보다 과도하게 화려하게 쓰지 마세요.
+9. 전체 분량은 A4 2장 이내로 작성합니다. 경력기술서 수준의 상세한 경력 서술을 포함하세요.
 
 응답은 반드시 아래 JSON 형식으로:
-{
+{{
   "sections": [
-    {"id": "섹션ID", "label": "섹션 라벨", "content": "마크다운 내용"}
+    {{"id": "섹션ID", "label": "섹션 라벨", "content": "마크다운 내용"}}
   ],
   "full_markdown": "전체 이력서 마크다운 (한국어)"
-}"""
+}}"""
 
 SYSTEM_PROMPT_EN = """\
 You are a professional resume writer. Generate an optimized resume in Markdown based on the given strategy and template structure.
@@ -38,18 +56,19 @@ Writing principles:
 2. Use ONLY facts from the applicant's original resume. Do NOT fabricate experiences.
 3. Naturally incorporate the strategy's emphasis points and keywords.
 4. Use specific numbers from the original only. Do NOT inflate or estimate numbers not in the source.
-5. Write each experience entry in STAR format (Situation-Task-Action-Result).
+5. {experience_format}
 6. Include ATS-optimized keywords naturally.
 7. **No exaggeration**: Avoid words like "revolutionary", "groundbreaking", "exceptional". Write in a fact-based, professional tone.
 8. Maintain a tone consistent with the original resume. Do not over-embellish.
+9. Keep the resume to 1 page. Be concise — prioritize impact over exhaustiveness.
 
 Respond ONLY in this JSON format:
-{
+{{
   "sections": [
-    {"id": "section_id", "label": "Section Label", "content": "markdown content"}
+    {{"id": "section_id", "label": "Section Label", "content": "markdown content"}}
   ],
   "full_markdown": "Full resume markdown (in English)"
-}"""
+}}"""
 
 
 class ResumeWriter:
@@ -64,12 +83,15 @@ class ResumeWriter:
         template: ResumeTemplate,
         *,
         language: str = "ko",
+        role_category: str = "general",
     ) -> TailoredResume:
         """Generate a tailored resume based on strategy and template."""
         template_spec = self._format_template(template)
         strategy_spec = self._format_strategy(strategy)
 
-        system_prompt = SYSTEM_PROMPT_EN if language == "en" else SYSTEM_PROMPT_KO
+        exp_format = EXPERIENCE_FORMAT.get(role_category, EXPERIENCE_FORMAT["general"])
+        system_prompt_template = SYSTEM_PROMPT_EN if language == "en" else SYSTEM_PROMPT_KO
+        system_prompt = system_prompt_template.format(experience_format=exp_format)
 
         prompt = f"""다음 전략과 템플릿에 따라 맞춤 이력서를 작성하세요.
 

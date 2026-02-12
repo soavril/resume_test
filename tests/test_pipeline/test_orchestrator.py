@@ -75,6 +75,31 @@ def mock_qa_json():
     }
 
 
+def _make_dispatch(responses):
+    """Create a side_effect function that dispatches by prompt content.
+
+    This is needed because asyncio.gather makes LLM call order
+    non-deterministic in Phase 1 (company research + JD analysis).
+    """
+    remaining = list(responses)
+
+    async def _dispatch(prompt, **kwargs):
+        if "회사 프로필을 작성하세요" in prompt:
+            return responses["company"]
+        if "채용공고를 분석하세요" in prompt:
+            return responses["job"]
+        # For sequential phases, pop from remaining list
+        return remaining.pop(0)
+
+    # Pre-fill remaining with sequential-phase responses only
+    remaining.clear()
+    for key in ("strategy", "resume", "qa", "resume2", "qa2"):
+        if key in responses:
+            remaining.append(responses[key])
+
+    return _dispatch
+
+
 class TestOrchestrator:
     @pytest.mark.asyncio
     async def test_full_pipeline(
@@ -87,14 +112,13 @@ class TestOrchestrator:
         mock_resume_json,
         mock_qa_json,
     ):
-        # Set up mock responses in sequence
-        mock_llm_client.generate_json.side_effect = [
-            mock_company_json,  # Company researcher
-            mock_job_json,  # JD analyst
-            mock_strategy_json,  # Strategy planner
-            mock_resume_json,  # Resume writer
-            mock_qa_json,  # QA reviewer
-        ]
+        mock_llm_client.generate_json.side_effect = _make_dispatch({
+            "company": mock_company_json,
+            "job": mock_job_json,
+            "strategy": mock_strategy_json,
+            "resume": mock_resume_json,
+            "qa": mock_qa_json,
+        })
 
         orchestrator = PipelineOrchestrator(mock_llm_client, mock_search_client)
         result = await orchestrator.run(
@@ -167,15 +191,15 @@ class TestOrchestrator:
             "suggestions": [],
             "pass": True,
         }
-        mock_llm_client.generate_json.side_effect = [
-            mock_company_json,
-            mock_job_json,
-            mock_strategy_json,
-            mock_resume_json,  # First write
-            qa_fail,  # First QA - fail
-            mock_resume_json,  # Rewrite
-            qa_pass,  # Second QA - pass
-        ]
+        mock_llm_client.generate_json.side_effect = _make_dispatch({
+            "company": mock_company_json,
+            "job": mock_job_json,
+            "strategy": mock_strategy_json,
+            "resume": mock_resume_json,
+            "qa": qa_fail,
+            "resume2": mock_resume_json,
+            "qa2": qa_pass,
+        })
 
         orchestrator = PipelineOrchestrator(mock_llm_client, mock_search_client)
         result = await orchestrator.run(
@@ -207,13 +231,13 @@ class TestOrchestrator:
         mock_resume_json,
         mock_qa_json,
     ):
-        mock_llm_client.generate_json.side_effect = [
-            mock_company_json,
-            mock_job_json,
-            mock_strategy_json,
-            mock_resume_json,
-            mock_qa_json,
-        ]
+        mock_llm_client.generate_json.side_effect = _make_dispatch({
+            "company": mock_company_json,
+            "job": mock_job_json,
+            "strategy": mock_strategy_json,
+            "resume": mock_resume_json,
+            "qa": mock_qa_json,
+        })
 
         phases = []
 

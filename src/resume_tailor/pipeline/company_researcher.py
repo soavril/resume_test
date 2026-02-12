@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.clients.search_client import SearchClient
 from resume_tailor.models.company import CompanyProfile
@@ -62,9 +64,11 @@ JSON 형식으로만 응답하세요."""
             f"{company_name} 채용 복지 연봉",
             f"{company_name} 최근 뉴스 사업 방향",
         ]
+        results_lists = await asyncio.gather(
+            *[self.search.search(q, max_results=3) for q in queries]
+        )
         all_results = []
-        for query in queries:
-            results = await self.search.search(query, max_results=3)
+        for results in results_lists:
             all_results.extend(results)
         return all_results
 
