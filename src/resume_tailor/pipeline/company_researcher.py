@@ -51,6 +51,8 @@ JSON 형식으로만 응답하세요."""
             system=SYSTEM_PROMPT,
             model=self.model,
         )
+        if not isinstance(data, dict):
+            raise ValueError(f"Expected dict from LLM, got {type(data).__name__}")
         return CompanyProfile(**data)
 
     async def _search_company(self, company_name: str) -> list[dict]:
