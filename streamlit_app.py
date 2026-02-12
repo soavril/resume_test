@@ -26,7 +26,7 @@ for key in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY"):
     if key not in os.environ:
         try:
             os.environ[key] = st.secrets[key]
-        except (KeyError, FileNotFoundError):
+        except Exception:
             pass
 
 from resume_tailor.cache.company_cache import CompanyCache
@@ -61,7 +61,10 @@ st.set_page_config(
 # Password gate
 # ---------------------------------------------------------------------------
 
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", os.environ.get("APP_PASSWORD", "resume2026"))
+try:
+    APP_PASSWORD = st.secrets["APP_PASSWORD"]
+except Exception:
+    APP_PASSWORD = os.environ.get("APP_PASSWORD", "resume2026")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
