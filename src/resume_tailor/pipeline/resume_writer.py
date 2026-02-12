@@ -7,7 +7,7 @@ from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.models.strategy import ResumeStrategy
 from resume_tailor.templates.loader import ResumeTemplate
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT_KO = """\
 당신은 전문 이력서 작성가입니다. 주어진 전략과 템플릿 구조에 따라 최적화된 이력서를 Markdown으로 작성합니다.
 
 작성 원칙:
@@ -25,7 +25,30 @@ SYSTEM_PROMPT = """\
   "sections": [
     {"id": "섹션ID", "label": "섹션 라벨", "content": "마크다운 내용"}
   ],
-  "full_markdown": "전체 이력서 마크다운"
+  "full_markdown": "전체 이력서 마크다운 (한국어)"
+}"""
+
+SYSTEM_PROMPT_EN = """\
+You are a professional resume writer. Generate an optimized resume in Markdown based on the given strategy and template structure.
+
+CRITICAL: The ENTIRE resume MUST be written in English. Even if the source resume is in Korean, translate and write everything in English.
+
+Writing principles:
+1. Follow the provided template section order and structure exactly.
+2. Use ONLY facts from the applicant's original resume. Do NOT fabricate experiences.
+3. Naturally incorporate the strategy's emphasis points and keywords.
+4. Use specific numbers from the original only. Do NOT inflate or estimate numbers not in the source.
+5. Write each experience entry in STAR format (Situation-Task-Action-Result).
+6. Include ATS-optimized keywords naturally.
+7. **No exaggeration**: Avoid words like "revolutionary", "groundbreaking", "exceptional". Write in a fact-based, professional tone.
+8. Maintain a tone consistent with the original resume. Do not over-embellish.
+
+Respond ONLY in this JSON format:
+{
+  "sections": [
+    {"id": "section_id", "label": "Section Label", "content": "markdown content"}
+  ],
+  "full_markdown": "Full resume markdown (in English)"
 }"""
 
 
@@ -46,15 +69,9 @@ class ResumeWriter:
         template_spec = self._format_template(template)
         strategy_spec = self._format_strategy(strategy)
 
-        lang_instruction = ""
-        if language == "en":
-            lang_instruction = (
-                "\n\n**[CRITICAL] Write the ENTIRE resume in English.** "
-                "Translate all section labels and content to English. "
-                "Keep technical terms as-is. Do NOT use Korean.\n"
-            )
+        system_prompt = SYSTEM_PROMPT_EN if language == "en" else SYSTEM_PROMPT_KO
 
-        prompt = f"""다음 전략과 템플릿에 따라 맞춤 이력서를 작성하세요.{lang_instruction}
+        prompt = f"""다음 전략과 템플릿에 따라 맞춤 이력서를 작성하세요.
 
 ## 템플릿 구조 (반드시 이 순서와 섹션을 따르세요)
 {template_spec}
@@ -69,7 +86,7 @@ class ResumeWriter:
 
         data = await self.llm.generate_json(
             prompt=prompt,
-            system=SYSTEM_PROMPT,
+            system=system_prompt,
             model=self.model,
             temperature=0.3,
         )
