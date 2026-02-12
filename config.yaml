@@ -1,0 +1,18 @@
+llm:
+  haiku_model: "claude-haiku-4-5-20251001"
+  sonnet_model: "claude-sonnet-4-5-20250929"
+  max_retries: 3
+  timeout: 60
+
+search:
+  max_results: 3
+  search_depth: "advanced"
+
+pipeline:
+  qa_threshold: 80
+  max_rewrites: 1
+  writer_temperature: 0.3
+
+cache:
+  ttl_days: 7
+  db_path: "~/.resume-tailor/cache.db"

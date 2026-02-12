@@ -1,0 +1,40 @@
+Stripe - Senior Backend Engineer, Payments Platform
+
+Location: Remote (US, Canada, or APAC)
+Team: Payments Infrastructure
+
+About the role:
+We're looking for a Senior Backend Engineer to join our Payments Platform team.
+You'll work on the core systems that process hundreds of billions of dollars annually
+for millions of businesses worldwide.
+
+What you'll do:
+- Design, build, and maintain critical payment processing infrastructure
+- Work on distributed systems that handle millions of transactions per second
+- Improve system reliability, latency, and throughput of our payment APIs
+- Collaborate with product teams to build new payment features and methods
+- Drive technical decisions and contribute to our engineering culture
+- Mentor engineers and help grow the team's capabilities
+
+We're looking for someone who has:
+- 5+ years of experience in backend software engineering
+- Strong proficiency in at least one of: Java, Kotlin, Go, or Ruby
+- Experience building and operating large-scale distributed systems
+- Deep understanding of database systems (relational and/or NoSQL)
+- Experience with event-driven architectures and message queuing systems
+- Track record of designing APIs consumed by external developers
+- Strong problem-solving skills and attention to detail
+
+Nice to have:
+- Experience in the payments or fintech industry
+- Familiarity with Kubernetes and containerized deployments
+- Experience with observability tools (Datadog, Grafana, etc.)
+- Contributions to open source projects
+- Experience working in globally distributed teams
+
+What we offer:
+- Competitive salary ($180K - $280K) + equity
+- Remote-first culture
+- Learning & development budget
+- Health, dental, and vision insurance
+- 401(k) with company match
