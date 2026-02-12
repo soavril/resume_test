@@ -21,6 +21,14 @@ from dotenv import load_dotenv
 load_dotenv()
 nest_asyncio.apply()
 
+# Streamlit Cloud: sync st.secrets → os.environ so backend clients can read them
+for key in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY"):
+    if key not in os.environ:
+        try:
+            os.environ[key] = st.secrets[key]
+        except (KeyError, FileNotFoundError):
+            pass
+
 from resume_tailor.cache.company_cache import CompanyCache
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.clients.search_client import SearchClient
@@ -53,7 +61,7 @@ st.set_page_config(
 # Password gate
 # ---------------------------------------------------------------------------
 
-APP_PASSWORD = os.environ.get("APP_PASSWORD", "resume2026")
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", os.environ.get("APP_PASSWORD", "resume2026"))
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
