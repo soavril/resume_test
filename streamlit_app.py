@@ -45,6 +45,7 @@ from resume_tailor.templates.docx_renderer import (
     fill_docx_template,
     list_docx_placeholders,
 )
+from resume_tailor.parsers.jd_image_parser import extract_jd_from_file
 from resume_tailor.templates.smart_filler import smart_fill_docx
 
 # ---------------------------------------------------------------------------
@@ -164,11 +165,35 @@ def _mode_resume_tailor():
     PRESET_MAP = {"자동 감지": "auto", "개발/엔지니어링": "tech", "비즈니스/전략": "business"}
     role_category = PRESET_MAP[role_preset]
 
+    # Initialize session state for extracted JD text
+    if "jd_text_extracted" not in st.session_state:
+        st.session_state.jd_text_extracted = ""
+
     jd_text = st.text_area(
         "채용공고 붙여넣기",
+        value=st.session_state.jd_text_extracted,
         height=200,
         placeholder="채용공고 전문을 여기에 붙여넣으세요...",
     )
+
+    with st.expander("이미지/PDF에서 채용공고 추출", expanded=False):
+        jd_image_file = st.file_uploader(
+            "이미지 또는 PDF 업로드",
+            type=["png", "jpg", "jpeg", "pdf"],
+            help="채용공고 스크린샷 또는 PDF를 업로드하면 텍스트를 자동 추출합니다.",
+        )
+        if jd_image_file and st.button("텍스트 추출"):
+            with st.spinner("텍스트 추출 중..."):
+                llm_for_ocr = LLMClient()
+                extracted = asyncio.run(
+                    extract_jd_from_file(
+                        llm_for_ocr,
+                        jd_image_file.getvalue(),
+                        jd_image_file.name,
+                    )
+                )
+                st.session_state.jd_text_extracted = extracted
+                st.rerun()
 
     docx_template = st.file_uploader(
         "DOCX 양식 업로드 (선택)",

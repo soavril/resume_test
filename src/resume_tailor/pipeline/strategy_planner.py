@@ -49,7 +49,8 @@ SYSTEM_PROMPT = """\
 2. 강점(strong match)을 최대한 부각하는 방향으로 전략을 세웁니다.
 3. 약점(gap)은 관련 경험이나 학습 의지로 보완합니다.
 4. ATS 키워드를 자연스럽게 배치합니다.
-5. 이력서와 채용공고의 언어가 다를 수 있습니다 (예: 한글 이력서 + 영문 JD). 두 언어 모두 이해하고 전략을 세우세요."""
+5. 이력서와 채용공고의 언어가 다를 수 있습니다 (예: 한글 이력서 + 영문 JD). 두 언어 모두 이해하고 전략을 세우세요.
+6. keyword_plan의 키워드는 최종 이력서 언어에 맞춰 작성하세요. 한국어 이력서라면 키워드도 한국어로 (예: "규제 준수", "이해관계자 관리"). 영문 이력서라면 영어로."""
 
 
 class StrategyPlanner:
@@ -70,6 +71,8 @@ class StrategyPlanner:
         lang_note = ""
         if language == "en":
             lang_note = "\n\n**The final resume will be written in English. Plan keywords and tone accordingly.**"
+        else:
+            lang_note = "\n\n**최종 이력서는 한국어로 작성됩니다. 키워드, 톤, 전략을 모두 한국어 기준으로 수립하세요. 영문 JD의 용어는 한국어로 번역하여 사용합니다.**"
 
         role_hint = STRATEGY_HINTS.get(role_category, "")
         if role_hint:

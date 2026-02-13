@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 
 import anthropic
@@ -89,3 +90,53 @@ class LLMClient:
             max_tokens=max_tokens,
         )
         return extract_json(response.text)
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=1, max=10),
+        reraise=True,
+    )
+    async def extract_text_from_image(
+        self,
+        image_bytes: bytes,
+        image_media_type: str,
+        model: str = "claude-haiku-4-5-20251001",
+    ) -> str:
+        """Extract text from an image using Claude Vision.
+
+        Args:
+            image_bytes: Raw image bytes (PNG, JPEG, etc.)
+            image_media_type: MIME type (e.g. "image/png", "image/jpeg")
+            model: Claude model to use (Haiku for cost efficiency)
+
+        Returns:
+            Extracted text preserving structure and formatting.
+        """
+        b64_data = base64.b64encode(image_bytes).decode("utf-8")
+
+        message = await self.client.messages.create(
+            model=model,
+            max_tokens=4096,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": image_media_type,
+                            "data": b64_data,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "이 채용공고 이미지의 모든 텍스트를 정확히 추출하세요. "
+                            "원본의 구조와 포맷(제목, 목록, 표 등)을 최대한 유지하세요. "
+                            "추출된 텍스트만 출력하고, 설명이나 코멘트는 추가하지 마세요."
+                        ),
+                    },
+                ],
+            }],
+        )
+        return message.content[0].text
