@@ -3,6 +3,7 @@
 from resume_tailor.models.company import CompanyProfile
 from resume_tailor.models.job import JobAnalysis
 from resume_tailor.models.qa import QAResult
+from resume_tailor.models.refinement import RefinementSuggestion
 from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.models.strategy import (
     GapItem,
@@ -18,6 +19,7 @@ __all__ = [
     "KeywordPlan",
     "MatchItem",
     "QAResult",
+    "RefinementSuggestion",
     "ResumeSection",
     "ResumeStrategy",
     "TailoredResume",

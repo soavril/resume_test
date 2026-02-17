@@ -344,7 +344,9 @@ def _mode_resume_tailor():
         output_dir = Path("./output")
         output_dir.mkdir(parents=True, exist_ok=True)
         md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
-        md_path.write_text(result.resume.full_markdown, encoding="utf-8")
+        # Use refined version if available
+        download_md = st.session_state.get("refined_resume_md", result.resume.full_markdown)
+        md_path.write_text(download_md, encoding="utf-8")
 
         # Show detected role and completion status
         role_labels = {"tech": "개발/엔지니어링", "business": "비즈니스/전략", "design": "디자인", "general": "일반"}
@@ -355,11 +357,21 @@ def _mode_resume_tailor():
         safe_fname = f"{company_name}_{result.job.title}".replace(" ", "_")
 
         # Generate DOCX from scratch (no template needed)
+        # For DOCX, use refined resume if available
+        if "refined_resume_md" in st.session_state:
+            docx_resume = TailoredResume(
+                sections=[ResumeSection(id="full", label="전체", content=download_md)],
+                full_markdown=download_md,
+                metadata=result.resume.metadata,
+            )
+        else:
+            docx_resume = result.resume
+
         _docx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         _docx_tmp.close()
         _docx_tmp_path = Path(_docx_tmp.name)
         try:
-            generate_docx(resume=result.resume, output_path=_docx_tmp_path, title=f"{company_name} 이력서")
+            generate_docx(resume=docx_resume, output_path=_docx_tmp_path, title=f"{company_name} 이력서")
             docx_default_bytes = _docx_tmp_path.read_bytes()
         except Exception:
             logger.exception("DOCX generation failed")
@@ -371,7 +383,7 @@ def _mode_resume_tailor():
         with dl_cols[0]:
             st.download_button(
                 label="MD 다운로드",
-                data=result.resume.full_markdown.encode("utf-8"),
+                data=download_md.encode("utf-8"),
                 file_name=f"{safe_fname}.md",
                 mime="text/markdown",
                 type="secondary",
@@ -390,7 +402,7 @@ def _mode_resume_tailor():
         if _PDF_AVAILABLE:
             with dl_cols[2]:
                 try:
-                    pdf_bytes = _md_to_pdf(result.resume.full_markdown)
+                    pdf_bytes = _md_to_pdf(download_md)
                     st.download_button(
                         label="PDF 다운로드",
                         data=pdf_bytes,
@@ -408,7 +420,71 @@ def _mode_resume_tailor():
         )
 
         with tab_resume:
-            st.markdown(result.resume.full_markdown)
+            # Use refined version if user applied an alternative
+            current_md = st.session_state.get("refined_resume_md", result.resume.full_markdown)
+            st.markdown(current_md)
+
+            # Sentence refinement UI
+            st.divider()
+            st.subheader("문장 수정 추천")
+            selected = st.text_area(
+                "수정하고 싶은 문장을 붙여넣으세요",
+                height=80,
+                key="refine_input",
+            )
+            if st.button("대안 생성", key="btn_refine") and selected.strip():
+                from resume_tailor.pipeline.sentence_refiner import SentenceRefiner
+
+                refiner = SentenceRefiner(llm)
+                with st.spinner("대안 생성 중..."):
+                    try:
+                        suggestions = asyncio.run(
+                            refiner.refine(
+                                selected_text=selected,
+                                full_resume=current_md,
+                                jd_text=jd_text,
+                            )
+                        )
+                    except Exception:
+                        logger.exception("Sentence refinement failed")
+                        st.error("대안 생성에 실패했습니다.")
+                        suggestions = []
+
+                if suggestions:
+                    st.session_state["refinement_suggestions"] = [
+                        s.model_dump() for s in suggestions
+                    ]
+                    st.session_state["refinement_original"] = selected
+
+            # Display saved suggestions
+            if "refinement_suggestions" in st.session_state:
+                original = st.session_state.get("refinement_original", "")
+                for i, sug_dict in enumerate(
+                    st.session_state["refinement_suggestions"]
+                ):
+                    type_labels = {
+                        "conciseness": "간결성",
+                        "impact": "임팩트",
+                        "keyword": "키워드",
+                        "tone": "톤",
+                    }
+                    imp_type = sug_dict.get("improvement_type", "")
+                    label = type_labels.get(imp_type, imp_type)
+
+                    with st.container(border=True):
+                        st.markdown(f"**대안 {i + 1}** -- {label}")
+                        st.info(sug_dict["alternative"])
+                        st.caption(sug_dict["rationale"])
+                        if st.button(f"이 대안 적용", key=f"apply_{i}"):
+                            current = st.session_state.get(
+                                "refined_resume_md",
+                                result.resume.full_markdown,
+                            )
+                            st.session_state["refined_resume_md"] = current.replace(
+                                original, sug_dict["alternative"]
+                            )
+                            del st.session_state["refinement_suggestions"]
+                            st.rerun()
 
         with tab_qa:
             qa = result.qa
