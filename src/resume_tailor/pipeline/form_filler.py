@@ -39,6 +39,7 @@ async def generate_form_answers(
     jd_text: str = "",
     company_name: str = "",
     language: str = "ko",
+    model: str = "claude-sonnet-4-5-20250929",
 ) -> list[dict]:
     """Generate answers for each form question.
 
@@ -54,6 +55,7 @@ async def generate_form_answers(
             jd_text=jd_text,
             company_name=company_name,
             language=language,
+            model=model,
         )
 
         # Hard truncate if still over limit
@@ -74,6 +76,7 @@ async def extract_structured_fields(
     llm: LLMClient,
     resume: TailoredResume,
     form_fields: list[str] | None = None,
+    model: str = "claude-haiku-4-5-20251001",
 ) -> dict:
     """Extract structured data from resume for form filling."""
     fields_hint = ""
@@ -145,7 +148,7 @@ async def extract_structured_fields(
     data = await llm.generate_json(
         prompt=prompt,
         system=STRUCTURED_EXTRACTOR_SYSTEM,
-        model="claude-haiku-4-5-20251001",
+        model=model,
         max_tokens=4096,
     )
     return data
@@ -158,6 +161,7 @@ async def _answer_question(
     jd_text: str,
     company_name: str,
     language: str = "ko",
+    model: str = "claude-sonnet-4-5-20250929",
 ) -> str:
     """Generate an answer for a single question."""
     char_limit_note = ""
@@ -198,7 +202,7 @@ async def _answer_question(
     resp = await llm.generate(
         prompt=prompt,
         system=FORM_FILLER_SYSTEM,
-        model="claude-sonnet-4-5-20250929",
+        model=model,
         max_tokens=4096,
         temperature=0.3,
     )

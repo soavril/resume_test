@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
 from io import BytesIO
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import nest_asyncio
 import streamlit as st
@@ -43,10 +46,35 @@ from resume_tailor.pipeline.form_filler import (
 from resume_tailor.pipeline.orchestrator import PipelineOrchestrator
 from resume_tailor.templates.docx_renderer import (
     fill_docx_template,
+    generate_docx,
     list_docx_placeholders,
 )
 from resume_tailor.parsers.jd_image_parser import extract_jd_from_file
 from resume_tailor.templates.smart_filler import smart_fill_docx
+
+# Optional PDF support via weasyprint
+try:
+    import markdown as _markdown_mod
+    import weasyprint
+
+    def _md_to_pdf(md_text: str) -> bytes:
+        """Convert markdown text to PDF bytes with Korean font support."""
+        html_body = _markdown_mod.markdown(md_text, extensions=["tables", "fenced_code"])
+        css = (
+            '@import url("https://fonts.googleapis.com/css2?'
+            'family=Noto+Sans+KR:wght@400;700&display=swap");\n'
+            "body { font-family: 'Noto Sans KR', sans-serif; "
+            "font-size: 11pt; line-height: 1.6; margin: 2cm; }\n"
+            "h1, h2, h3 { margin-top: 1em; }\n"
+            "table { border-collapse: collapse; width: 100%; }\n"
+            "th, td { border: 1px solid #ccc; padding: 6px 10px; }\n"
+        )
+        full_html = f"<html><head><style>{css}</style></head><body>{html_body}</body></html>"
+        return weasyprint.HTML(string=full_html).write_pdf()
+
+    _PDF_AVAILABLE = True
+except ImportError:
+    _PDF_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -141,7 +169,8 @@ def _get_config():
 
 
 def _get_clients():
-    return LLMClient(), SearchClient()
+    config = _get_config()
+    return LLMClient(timeout=config.llm.timeout), SearchClient()
 
 
 # ---------------------------------------------------------------------------
@@ -184,16 +213,20 @@ def _mode_resume_tailor():
         )
         if jd_image_file and st.button("텍스트 추출"):
             with st.spinner("텍스트 추출 중..."):
-                llm_for_ocr = LLMClient()
-                extracted = asyncio.run(
-                    extract_jd_from_file(
-                        llm_for_ocr,
-                        jd_image_file.getvalue(),
-                        jd_image_file.name,
+                try:
+                    llm_for_ocr = LLMClient(timeout=_get_config().llm.timeout)
+                    extracted = asyncio.run(
+                        extract_jd_from_file(
+                            llm_for_ocr,
+                            jd_image_file.getvalue(),
+                            jd_image_file.name,
+                        )
                     )
-                )
-                st.session_state.jd_text_extracted = extracted
-                st.rerun()
+                    st.session_state.jd_text_extracted = extracted
+                    st.rerun()
+                except Exception:
+                    logger.exception("JD image extraction failed")
+                    st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     docx_template = st.file_uploader(
         "DOCX 양식 업로드 (선택)",
@@ -245,17 +278,22 @@ def _mode_resume_tailor():
             pct, label = phases.get(phase, (0, detail))
             progress_bar.progress(pct, text=detail)
 
-        result = asyncio.run(
-            orchestrator.run(
-                company_name=company_name,
-                jd_text=jd_text,
-                resume_text=resume_text,
-                company_profile=cached_profile,
-                on_phase=on_phase,
-                language=lang_code,
-                role_category=role_category,
+        try:
+            result = asyncio.run(
+                orchestrator.run(
+                    company_name=company_name,
+                    jd_text=jd_text,
+                    resume_text=resume_text,
+                    company_profile=cached_profile,
+                    on_phase=on_phase,
+                    language=lang_code,
+                    role_category=role_category,
+                )
             )
-        )
+        except Exception:
+            logger.exception("Resume tailoring pipeline failed")
+            st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            return
         progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
 
         # Cache company profile
@@ -273,14 +311,56 @@ def _mode_resume_tailor():
         detected = result.metadata.get("role_category", "general")
         st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
 
-        # Markdown download
-        st.download_button(
-            label="마크다운 다운로드",
-            data=result.resume.full_markdown.encode("utf-8"),
-            file_name=f"{company_name}_{result.job.title}.md".replace(" ", "_"),
-            mime="text/markdown",
-            type="secondary",
-        )
+        # Download buttons: MD + DOCX + PDF in a row
+        safe_fname = f"{company_name}_{result.job.title}".replace(" ", "_")
+
+        # Generate DOCX from scratch (no template needed)
+        _docx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+        _docx_tmp.close()
+        _docx_tmp_path = Path(_docx_tmp.name)
+        try:
+            generate_docx(resume=result.resume, output_path=_docx_tmp_path, title=f"{company_name} 이력서")
+            docx_default_bytes = _docx_tmp_path.read_bytes()
+        except Exception:
+            logger.exception("DOCX generation failed")
+            docx_default_bytes = None
+        finally:
+            _docx_tmp_path.unlink(missing_ok=True)
+
+        dl_cols = st.columns(3) if _PDF_AVAILABLE else st.columns(2)
+        with dl_cols[0]:
+            st.download_button(
+                label="MD 다운로드",
+                data=result.resume.full_markdown.encode("utf-8"),
+                file_name=f"{safe_fname}.md",
+                mime="text/markdown",
+                type="secondary",
+            )
+        with dl_cols[1]:
+            if docx_default_bytes is not None:
+                st.download_button(
+                    label="DOCX 다운로드",
+                    data=docx_default_bytes,
+                    file_name=f"{safe_fname}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    type="secondary",
+                )
+            else:
+                st.warning("DOCX 생성 실패")
+        if _PDF_AVAILABLE:
+            with dl_cols[2]:
+                try:
+                    pdf_bytes = _md_to_pdf(result.resume.full_markdown)
+                    st.download_button(
+                        label="PDF 다운로드",
+                        data=pdf_bytes,
+                        file_name=f"{safe_fname}.pdf",
+                        mime="application/pdf",
+                        type="secondary",
+                    )
+                except Exception:
+                    logger.exception("PDF generation failed")
+                    st.warning("PDF 생성 실패")
 
         # Display results in tabs
         tab_resume, tab_qa, tab_company = st.tabs(
@@ -325,7 +405,9 @@ def _mode_resume_tailor():
             st.subheader("DOCX 다운로드")
 
             tmp_docx_in = _save_upload_to_tmp(docx_template)
-            tmp_docx_out = Path(tempfile.mktemp(suffix=".docx"))
+            _tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+            _tmp_out.close()
+            tmp_docx_out = Path(_tmp_out.name)
 
             try:
                 with st.spinner("DOCX 양식에 내용 채우는 중..."):
@@ -337,14 +419,19 @@ def _mode_resume_tailor():
                             output_path=tmp_docx_out,
                         )
                     else:
-                        asyncio.run(
-                            smart_fill_docx(
-                                template_path=tmp_docx_in,
-                                resume=result.resume,
-                                output_path=tmp_docx_out,
-                                llm=llm,
+                        try:
+                            asyncio.run(
+                                smart_fill_docx(
+                                    template_path=tmp_docx_in,
+                                    resume=result.resume,
+                                    output_path=tmp_docx_out,
+                                    llm=llm,
+                                )
                             )
-                        )
+                        except Exception:
+                            logger.exception("DOCX smart fill failed")
+                            st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+                            return
 
                 docx_bytes = tmp_docx_out.read_bytes()
                 st.download_button(
@@ -418,7 +505,7 @@ def _mode_form_answers():
 
         st.info(f"발견된 문항: {len(form_questions)}개")
 
-        llm = LLMClient()
+        llm = LLMClient(timeout=_get_config().llm.timeout)
 
         # Generate answers + structured fields in parallel
         async def _run_all():
@@ -436,7 +523,12 @@ def _mode_form_answers():
 
         with st.status("답변 생성 중...", expanded=True) as status:
             st.write("구조화 데이터 추출 + 답변 생성 중...")
-            structured, answers = asyncio.run(_run_all())
+            try:
+                structured, answers = asyncio.run(_run_all())
+            except Exception:
+                logger.exception("Form answer generation failed")
+                st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+                return
             status.update(label="답변 생성 완료!", state="complete")
 
         # Display answers

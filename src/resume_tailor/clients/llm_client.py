@@ -23,8 +23,13 @@ class LLMResponse:
 class LLMClient:
     """Async Claude API client with exponential-backoff retries."""
 
-    def __init__(self, api_key: str | None = None):
-        self.client = anthropic.AsyncAnthropic(api_key=api_key)
+    def __init__(self, api_key: str | None = None, timeout: float | None = None):
+        kwargs: dict = {}
+        if api_key is not None:
+            kwargs["api_key"] = api_key
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        self.client = anthropic.AsyncAnthropic(**kwargs)
 
     @retry(
         stop=stop_after_attempt(3),

@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from resume_tailor.utils.url_validator import validate_url
+
 
 @dataclass
 class FormQuestion:
@@ -23,6 +25,7 @@ class FormQuestion:
 
 async def extract_from_url(url: str) -> list[FormQuestion]:
     """Render a URL with Playwright and extract form questions."""
+    validate_url(url)
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:

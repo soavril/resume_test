@@ -136,7 +136,7 @@ class PipelineOrchestrator:
 
         # --- QA rewrite loop ---
         rewrites = 0
-        if not qa.pass_ and rewrites < self.max_rewrites:
+        while not qa.pass_ and rewrites < self.max_rewrites:
             _notify("rewrite", f"QA 점수 {qa.overall_score} < {self.qa_threshold}, 재작성 중")
             resume = await self.resume_writer.write(
                 strategy, resume_text, template, language=language, role_category=effective_category,

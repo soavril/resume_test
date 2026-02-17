@@ -7,3 +7,4 @@ build/
 output/
 *.pyc
 .streamlit/secrets.toml
+.claude/settings.local.json

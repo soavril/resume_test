@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from resume_tailor.utils.url_validator import validate_url
+
 
 async def autofill_form(url: str, answers: list[dict]) -> int:
     """Open the URL in a visible browser, fill textarea fields, and wait.
@@ -9,6 +11,7 @@ async def autofill_form(url: str, answers: list[dict]) -> int:
     The browser stays open until the user closes it manually.
     Returns the number of fields filled.
     """
+    validate_url(url)
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:

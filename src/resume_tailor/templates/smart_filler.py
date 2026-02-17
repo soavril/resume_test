@@ -331,6 +331,7 @@ async def analyze_and_plan(
     llm: LLMClient,
     structure: dict,
     resume: TailoredResume,
+    model: str = "claude-sonnet-4-5-20250929",
 ) -> dict:
     """LLM analyzes DOCX structure and produces a fill plan."""
     structure_text = format_structure_for_llm(structure)
@@ -349,7 +350,7 @@ col 인덱스는 고유 셀 순번(0부터 시작)입니다."""
     data = await llm.generate_json(
         prompt=prompt,
         system=ANALYZER_SYSTEM,
-        model="claude-sonnet-4-5-20250929",
+        model=model,
         max_tokens=8192,
     )
     return data
@@ -724,6 +725,7 @@ async def _retry_with_errors(
     resume: TailoredResume,
     plan: dict,
     errors: list[str],
+    model: str = "claude-sonnet-4-5-20250929",
 ) -> dict:
     """Ask LLM to fix the fill_plan based on validation errors."""
     structure_text = format_structure_for_llm(structure)
@@ -748,7 +750,7 @@ col 인덱스는 고유 셀 순번(0부터 시작)이며, 열-헤더 매핑을 �
     return await llm.generate_json(
         prompt=prompt,
         system=ANALYZER_SYSTEM,
-        model="claude-sonnet-4-5-20250929",
+        model=model,
         max_tokens=8192,
     )
 
@@ -764,6 +766,7 @@ async def smart_fill_docx(
     output_path: str | Path,
     llm: LLMClient,
     max_attempts: int = 2,
+    model: str = "claude-sonnet-4-5-20250929",
 ) -> Path:
     """Analyze any DOCX template and intelligently fill it with resume data.
 
@@ -775,7 +778,7 @@ async def smart_fill_docx(
     """
     structure = extract_docx_structure(template_path)
 
-    plan = await analyze_and_plan(llm, structure, resume)
+    plan = await analyze_and_plan(llm, structure, resume, model=model)
 
     for attempt in range(max_attempts):
         errors = validate_fill_plan(structure, plan)
@@ -787,7 +790,7 @@ async def smart_fill_docx(
         )
         if attempt < max_attempts - 1:
             plan = await _retry_with_errors(
-                llm, structure, resume, plan, errors,
+                llm, structure, resume, plan, errors, model=model,
             )
 
     if errors:

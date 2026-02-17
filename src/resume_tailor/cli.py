@@ -83,7 +83,7 @@ def tailor(
     if cached_profile:
         console.print(f"[green]캐시된 회사 정보 사용: {company}[/green]")
 
-    llm = LLMClient()
+    llm = LLMClient(timeout=config.llm.timeout)
     search = SearchClient()
     orchestrator = PipelineOrchestrator(
         llm,
@@ -205,7 +205,7 @@ def research(
     if cached:
         console.print(f"[yellow]이미 캐시된 정보가 있습니다 ({company}). 새로 검색합니다.[/yellow]")
 
-    llm = LLMClient()
+    llm = LLMClient(timeout=config.llm.timeout)
     search = SearchClient()
     orchestrator = PipelineOrchestrator(
         llm,
@@ -361,7 +361,8 @@ def fill_form(
         console.print(f"  {i}. {q.label}{limit_str}")
 
     # Generate answers + structured data
-    llm = LLMClient()
+    config = load_config()
+    llm = LLMClient(timeout=config.llm.timeout)
 
     async def _run_all():
         import asyncio as aio

@@ -48,6 +48,7 @@ async def fill_table_template(
     resume: TailoredResume,
     output_path: str | Path,
     llm: LLMClient | None = None,
+    model: str = "claude-haiku-4-5-20251001",
 ) -> Path:
     """Fill a table-based DOCX template with resume experience data.
 
@@ -70,7 +71,7 @@ async def fill_table_template(
     data_start_row = _find_data_start_row(table)
 
     if llm:
-        entries = await _extract_entries_with_llm(llm, resume)
+        entries = await _extract_entries_with_llm(llm, resume, model=model)
     else:
         entries = _extract_entries_simple(resume)
 
@@ -227,7 +228,7 @@ def _add_table_row(table) -> None:
     table._tbl.append(new_tr)
 
 
-async def _extract_entries_with_llm(llm: LLMClient, resume: TailoredResume) -> list[dict]:
+async def _extract_entries_with_llm(llm: LLMClient, resume: TailoredResume, model: str = "claude-haiku-4-5-20251001") -> list[dict]:
     """Use LLM to extract structured experience entries from resume."""
     prompt = f"""다음 이력서에서 경력/프로젝트 항목을 추출하세요.
 최근 경력부터 나열하세요.
@@ -240,7 +241,7 @@ JSON 배열로만 응답하세요."""
     data = await llm.generate_json(
         prompt=prompt,
         system=EXTRACT_PROMPT_SYSTEM,
-        model="claude-haiku-4-5-20251001",
+        model=model,
     )
 
     # Handle case where LLM returns {"entries": [...]} instead of [...]

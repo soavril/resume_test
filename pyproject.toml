@@ -24,6 +24,8 @@ dependencies = [
     "playwright>=1.40.0",
     "streamlit>=1.32.0",
     "nest-asyncio>=1.6.0",
+    "markdown>=3.5.0",
+    "weasyprint>=61.0",
 ]
 
 [project.optional-dependencies]

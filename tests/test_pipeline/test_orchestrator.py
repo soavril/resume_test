@@ -93,7 +93,7 @@ def _make_dispatch(responses):
 
     # Pre-fill remaining with sequential-phase responses only
     remaining.clear()
-    for key in ("strategy", "resume", "qa", "resume2", "qa2"):
+    for key in ("strategy", "resume", "qa", "resume2", "qa2", "resume3", "qa3"):
         if key in responses:
             remaining.append(responses[key])
 
@@ -210,6 +210,105 @@ class TestOrchestrator:
 
         assert result.rewrites == 1
         assert result.qa.pass_ is True
+
+    @pytest.mark.asyncio
+    async def test_qa_rewrite_loop_max_rewrites(
+        self,
+        mock_llm_client,
+        mock_search_client,
+        mock_company_json,
+        mock_job_json,
+        mock_strategy_json,
+        mock_resume_json,
+    ):
+        """QA rewrite loop should retry up to max_rewrites times."""
+        qa_fail = {
+            "factual_accuracy": 60,
+            "keyword_coverage": 50,
+            "template_compliance": 70,
+            "overall_score": 60,
+            "issues": ["문제"],
+            "suggestions": ["개선"],
+            "pass": False,
+        }
+        qa_pass = {
+            "factual_accuracy": 90,
+            "keyword_coverage": 85,
+            "template_compliance": 90,
+            "overall_score": 88,
+            "issues": [],
+            "suggestions": [],
+            "pass": True,
+        }
+        # Sequence: strategy, resume, qa_fail, resume(rewrite1), qa_fail, resume(rewrite2), qa_pass
+        mock_llm_client.generate_json.side_effect = _make_dispatch({
+            "company": mock_company_json,
+            "job": mock_job_json,
+            "strategy": mock_strategy_json,
+            "resume": mock_resume_json,
+            "qa": qa_fail,
+            "resume2": mock_resume_json,
+            "qa2": qa_fail,
+            "resume3": mock_resume_json,
+            "qa3": qa_pass,
+        })
+
+        orchestrator = PipelineOrchestrator(
+            mock_llm_client, mock_search_client, max_rewrites=3,
+        )
+        result = await orchestrator.run(
+            company_name="테스트",
+            jd_text="개발자",
+            resume_text="이력서",
+        )
+
+        # 2 rewrites: first rewrite still fails, second rewrite passes
+        assert result.rewrites == 2
+        assert result.qa.pass_ is True
+
+    @pytest.mark.asyncio
+    async def test_qa_rewrite_loop_exhausts_max_rewrites(
+        self,
+        mock_llm_client,
+        mock_search_client,
+        mock_company_json,
+        mock_job_json,
+        mock_strategy_json,
+        mock_resume_json,
+    ):
+        """QA rewrite loop should stop at max_rewrites even if still failing."""
+        qa_fail = {
+            "factual_accuracy": 60,
+            "keyword_coverage": 50,
+            "template_compliance": 70,
+            "overall_score": 60,
+            "issues": ["문제"],
+            "suggestions": ["개선"],
+            "pass": False,
+        }
+        mock_llm_client.generate_json.side_effect = _make_dispatch({
+            "company": mock_company_json,
+            "job": mock_job_json,
+            "strategy": mock_strategy_json,
+            "resume": mock_resume_json,
+            "qa": qa_fail,
+            "resume2": mock_resume_json,
+            "qa2": qa_fail,
+            "resume3": mock_resume_json,
+            "qa3": qa_fail,
+        })
+
+        orchestrator = PipelineOrchestrator(
+            mock_llm_client, mock_search_client, max_rewrites=2,
+        )
+        result = await orchestrator.run(
+            company_name="테스트",
+            jd_text="개발자",
+            resume_text="이력서",
+        )
+
+        assert result.rewrites == 2
+        assert result.qa.pass_ is False
 
     @pytest.mark.asyncio
     async def test_research_only(self, mock_llm_client, mock_search_client, mock_company_json):
