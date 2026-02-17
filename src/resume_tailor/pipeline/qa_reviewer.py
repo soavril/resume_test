@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.models.qa import QAResult
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 당신은 이력서 품질 검수 전문가입니다. 생성된 이력서를 원본과 비교하여 사실 정확성, 키워드 커버리지, 템플릿 준수율을 평가합니다.
@@ -44,6 +48,7 @@ class QAReviewer:
         jd_text: str,
     ) -> QAResult:
         """Review a generated resume against the original and JD."""
+        logger.info("Reviewing resume quality...")
         prompt = f"""다음 생성된 이력서를 검수하세요.
 
 ## 생성된 이력서

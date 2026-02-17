@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from resume_tailor.clients.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.models.strategy import ResumeStrategy
 from resume_tailor.templates.loader import ResumeTemplate
@@ -88,6 +92,7 @@ class ResumeWriter:
         role_category: str = "general",
     ) -> TailoredResume:
         """Generate a tailored resume based on strategy and template."""
+        logger.info("Writing resume...")
         template_spec = self._format_template(template)
         strategy_spec = self._format_strategy(strategy)
 

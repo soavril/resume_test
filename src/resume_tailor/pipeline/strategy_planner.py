@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from resume_tailor.clients.llm_client import LLMClient
+
+logger = logging.getLogger(__name__)
 from resume_tailor.models.company import CompanyProfile
 from resume_tailor.models.job import JobAnalysis
 from resume_tailor.models.strategy import ResumeStrategy
@@ -68,6 +72,7 @@ class StrategyPlanner:
         role_category: str = "general",
     ) -> ResumeStrategy:
         """Create a tailoring strategy based on company, JD, and resume."""
+        logger.info("Planning strategy...")
         lang_note = ""
         if language == "en":
             lang_note = "\n\n**The final resume will be written in English. Plan keywords and tone accordingly.**"

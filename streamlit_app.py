@@ -140,6 +140,22 @@ with st.sidebar:
         help="PDF, DOCX, TXT 또는 MD 파일",
     )
 
+    st.divider()
+
+    with st.expander("사용 기록"):
+        try:
+            from resume_tailor.logging.usage_store import UsageStore
+            store = UsageStore()
+            logs = store.get_logs(limit=10)
+            stats = store.get_monthly_stats()
+            st.metric("이번 달 사용", f"{stats.get('total_runs', 0)}회")
+            st.metric("이번 달 비용", f"${stats.get('total_cost_usd', 0):.4f}")
+            if logs:
+                for log in logs:
+                    st.text(f"{log.timestamp:%m/%d} | {log.company_name or '-'} | 점수:{log.qa_score or '-'} | ${log.estimated_cost_usd:.4f}")
+        except Exception:
+            st.info("사용 기록이 없습니다.")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -295,6 +311,30 @@ def _mode_resume_tailor():
             st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
             return
         progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
+
+        # Save usage log
+        try:
+            from resume_tailor.logging.usage_store import UsageStore
+            from resume_tailor.logging.models import UsageLog
+            store = UsageStore()
+            log = UsageLog(
+                session_id=st.session_state.get("session_id", "anonymous"),
+                mode="resume_tailor",
+                company_name=company_name,
+                job_title=result.job.title if result.job else None,
+                qa_score=result.qa.overall_score if result.qa else None,
+                rewrites=result.rewrites,
+                elapsed_seconds=result.elapsed_seconds,
+                total_input_tokens=result.total_input_tokens,
+                total_output_tokens=result.total_output_tokens,
+                search_count=result.search_count,
+                estimated_cost_usd=result.estimated_cost_usd,
+                role_category=result.metadata.get("role_category"),
+                language=lang_code,
+            )
+            store.save_log(log)
+        except Exception:
+            logger.exception("Failed to save usage log")
 
         # Cache company profile
         if not cached_profile:

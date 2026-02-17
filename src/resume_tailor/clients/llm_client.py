@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import base64
+import logging
 from dataclasses import dataclass
 
 import anthropic
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from resume_tailor.utils.json_parser import extract_json
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,6 +33,7 @@ class LLMClient:
         if timeout is not None:
             kwargs["timeout"] = timeout
         self.client = anthropic.AsyncAnthropic(**kwargs)
+        self._token_log: list[tuple[str, int, int]] = []  # (model, input_tokens, output_tokens)
 
     @retry(
         stop=stop_after_attempt(3),
@@ -65,17 +69,26 @@ class LLMClient:
         max_tokens: int = 8192,
     ) -> LLMResponse:
         """Send a prompt to Claude and return the text response with usage."""
-        message = await self._call_api(
-            prompt=prompt,
-            system=system,
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-        )
+        logger.debug("LLM call: model=%s", model)
+        try:
+            message = await self._call_api(
+                prompt=prompt,
+                system=system,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception:
+            logger.error("LLM call failed", exc_info=True)
+            raise
+        input_tokens = message.usage.input_tokens
+        output_tokens = message.usage.output_tokens
+        logger.debug("LLM response: %d input, %d output tokens", input_tokens, output_tokens)
+        self._token_log.append((model, input_tokens, output_tokens))
         return LLMResponse(
             text=message.content[0].text,
-            input_tokens=message.usage.input_tokens,
-            output_tokens=message.usage.output_tokens,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     async def generate_json(
@@ -144,4 +157,17 @@ class LLMClient:
                 ],
             }],
         )
+        input_tokens = message.usage.input_tokens
+        output_tokens = message.usage.output_tokens
+        self._token_log.append((model, input_tokens, output_tokens))
         return message.content[0].text
+
+    def get_token_summary(self) -> dict:
+        """Return accumulated token usage and reset the log."""
+        summary = {
+            "input": sum(t[1] for t in self._token_log),
+            "output": sum(t[2] for t in self._token_log),
+            "calls": list(self._token_log),
+        }
+        self._token_log.clear()
+        return summary

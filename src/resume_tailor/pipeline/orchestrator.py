@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.clients.search_client import SearchClient
@@ -39,6 +42,10 @@ class PipelineResult:
     qa: QAResult
     rewrites: int = 0
     elapsed_seconds: float = 0.0
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    search_count: int = 0
+    estimated_cost_usd: float = 0.0
     metadata: dict = field(default_factory=dict)
 
 
@@ -56,6 +63,8 @@ class PipelineOrchestrator:
         max_rewrites: int = 1,
         writer_temperature: float = 0.3,
     ):
+        self.llm = llm
+        self.search = search
         self.researcher = CompanyResearcher(llm, search, model=haiku_model)
         self.jd_analyst = JDAnalyst(llm, model=haiku_model)
         self.strategy_planner = StrategyPlanner(llm, model=sonnet_model)
@@ -90,6 +99,7 @@ class PipelineOrchestrator:
                 "tech"/"business"/"design"/"general".
         """
         start = time.monotonic()
+        logger.info("Pipeline started for company=%s, role_category=%s", company_name, role_category)
 
         def _notify(phase: str, detail: str = ""):
             if on_phase:
@@ -100,13 +110,17 @@ class PipelineOrchestrator:
 
         if company_profile:
             company = company_profile
+            logger.info("Starting JD analysis (company profile pre-cached)")
             job = await self.jd_analyst.analyze(jd_text)
         else:
+            logger.info("Starting company research and JD analysis")
             company, job = await asyncio.gather(
                 self.researcher.research(company_name),
                 self.jd_analyst.analyze(jd_text),
             )
 
+        logger.info("Company research complete: %s", company.name)
+        logger.info("JD analysis complete: %s", job.title)
         _notify("phase1_done", f"회사: {company.name}, 포지션: {job.title}")
 
         # --- Resolve role_category ---
@@ -120,24 +134,31 @@ class PipelineOrchestrator:
 
         # --- Phase 2: Sequential strategy → write → QA ---
         _notify("phase2", "전략 수립 중")
+        logger.info("Starting strategy planning")
         strategy = await self.strategy_planner.plan(
             company, job, resume_text, language=language, role_category=effective_category,
         )
+        logger.info("Strategy planning complete")
 
         _notify("writing", "이력서 작성 중")
+        logger.info("Starting resume writing")
         resume = await self.resume_writer.write(
             strategy, resume_text, template, language=language, role_category=effective_category,
         )
+        logger.info("Resume writing complete")
 
         _notify("qa", "품질 검수 중")
+        logger.info("Starting QA review")
         qa = await self.qa_reviewer.review(
             resume.full_markdown, resume_text, jd_text
         )
+        logger.info("QA review complete: score=%d, pass=%s", qa.overall_score, qa.pass_)
 
         # --- QA rewrite loop ---
         rewrites = 0
         while not qa.pass_ and rewrites < self.max_rewrites:
             _notify("rewrite", f"QA 점수 {qa.overall_score} < {self.qa_threshold}, 재작성 중")
+            logger.info("QA score %d < %d, starting rewrite #%d", qa.overall_score, self.qa_threshold, rewrites + 1)
             resume = await self.resume_writer.write(
                 strategy, resume_text, template, language=language, role_category=effective_category,
             )
@@ -147,7 +168,18 @@ class PipelineOrchestrator:
             rewrites += 1
 
         elapsed = time.monotonic() - start
+        logger.info("Pipeline complete: score=%d, rewrites=%d, elapsed=%.1fs", qa.overall_score, rewrites, elapsed)
         _notify("done", f"완료! 점수: {qa.overall_score}, 소요: {elapsed:.1f}초")
+
+        # --- Collect usage stats ---
+        token_summary = self.llm.get_token_summary()
+        search_count = self.search.get_search_count() if hasattr(self.search, "get_search_count") else 0
+
+        try:
+            from resume_tailor.logging.cost_calculator import calculate_cost
+            cost = calculate_cost(token_summary["calls"], search_count)
+        except ImportError:
+            cost = 0.0
 
         return PipelineResult(
             company=company,
@@ -157,6 +189,10 @@ class PipelineOrchestrator:
             qa=qa,
             rewrites=rewrites,
             elapsed_seconds=elapsed,
+            total_input_tokens=token_summary["input"],
+            total_output_tokens=token_summary["output"],
+            search_count=search_count,
+            estimated_cost_usd=cost,
             metadata={"role_category": effective_category},
         )
 

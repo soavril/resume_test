@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.clients.search_client import SearchClient
 from resume_tailor.models.company import CompanyProfile
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 당신은 채용 시장 전문 리서처입니다. 주어진 회사에 대한 검색 결과를 분석하여 구직자에게 유용한 회사 프로필을 JSON으로 작성합니다.
@@ -38,6 +41,7 @@ class CompanyResearcher:
 
     async def research(self, company_name: str) -> CompanyProfile:
         """Research a company and return a structured profile."""
+        logger.info("Researching company: %s", company_name)
         search_results = await self._search_company(company_name)
         search_context = self._format_search_results(search_results)
 

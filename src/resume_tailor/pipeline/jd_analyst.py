@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.models.job import JobAnalysis
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """\
 당신은 채용공고 분석 전문가입니다. 주어진 채용공고를 분석하여 구직자가 이력서를 맞춤화하는 데 필요한 핵심 정보를 추출합니다.
@@ -42,6 +46,7 @@ class JDAnalyst:
 
     async def analyze(self, jd_text: str) -> JobAnalysis:
         """Analyze a job description and return structured analysis."""
+        logger.info("Analyzing JD...")
         prompt = f"""다음 채용공고를 분석하세요:
 
 ---
