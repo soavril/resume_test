@@ -294,6 +294,10 @@ def _mode_resume_tailor():
             pct, label = phases.get(phase, (0, detail))
             progress_bar.progress(pct, text=detail)
 
+        # Clear stale refinement state from previous runs
+        for key in ("refined_resume_md", "refinement_suggestions", "refinement_original"):
+            st.session_state.pop(key, None)
+
         try:
             result = asyncio.run(
                 orchestrator.run(
@@ -430,6 +434,7 @@ def _mode_resume_tailor():
             selected = st.text_area(
                 "수정하고 싶은 문장을 붙여넣으세요",
                 height=80,
+                max_chars=500,
                 key="refine_input",
             )
             if st.button("대안 생성", key="btn_refine") and selected.strip():
@@ -475,15 +480,16 @@ def _mode_resume_tailor():
                         st.markdown(f"**대안 {i + 1}** -- {label}")
                         st.info(sug_dict["alternative"])
                         st.caption(sug_dict["rationale"])
-                        if st.button(f"이 대안 적용", key=f"apply_{i}"):
+                        if st.button("이 대안 적용", key=f"apply_{i}"):
                             current = st.session_state.get(
                                 "refined_resume_md",
                                 result.resume.full_markdown,
                             )
                             st.session_state["refined_resume_md"] = current.replace(
-                                original, sug_dict["alternative"]
+                                original, sug_dict["alternative"], 1
                             )
                             del st.session_state["refinement_suggestions"]
+                            st.session_state.pop("refinement_original", None)
                             st.rerun()
 
         with tab_qa:
