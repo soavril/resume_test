@@ -137,8 +137,11 @@ with st.sidebar:
     resume_file = st.file_uploader(
         "내 이력서 업로드",
         type=["pdf", "docx", "doc", "txt", "md"],
-        help="PDF, DOCX, TXT 또는 MD 파일",
+        help="PDF, DOCX, TXT 또는 MD 파일 (10MB 이하)",
     )
+    if resume_file and resume_file.size > 10 * 1024 * 1024:
+        st.error("이력서 파일 크기가 10MB를 초과합니다.")
+        st.stop()
 
     st.divider()
 
@@ -198,7 +201,7 @@ def _mode_resume_tailor():
     st.header("이력서 맞춤 생성")
     st.markdown("회사 채용공고에 최적화된 이력서를 자동 생성합니다.")
 
-    company_name = st.text_input("회사명", placeholder="예: 삼성전자")
+    company_name = st.text_input("회사명", placeholder="예: 삼성전자", max_chars=100)
 
     role_preset = st.radio(
         "직군",
@@ -219,14 +222,18 @@ def _mode_resume_tailor():
         value=st.session_state.jd_text_extracted,
         height=200,
         placeholder="채용공고 전문을 여기에 붙여넣으세요...",
+        max_chars=10000,
     )
 
     with st.expander("이미지/PDF에서 채용공고 추출", expanded=False):
         jd_image_file = st.file_uploader(
             "이미지 또는 PDF 업로드",
             type=["png", "jpg", "jpeg", "pdf"],
-            help="채용공고 스크린샷 또는 PDF를 업로드하면 텍스트를 자동 추출합니다.",
+            help="채용공고 스크린샷 또는 PDF (5MB 이하)",
         )
+        if jd_image_file and jd_image_file.size > 5 * 1024 * 1024:
+            st.error("JD 파일 크기가 5MB를 초과합니다.")
+            st.stop()
         if jd_image_file and st.button("텍스트 추출"):
             with st.spinner("텍스트 추출 중..."):
                 try:
@@ -247,8 +254,11 @@ def _mode_resume_tailor():
     docx_template = st.file_uploader(
         "DOCX 양식 업로드 (선택)",
         type=["docx"],
-        help="회사에서 제공하는 이력서 양식. 없으면 마크다운만 생성.",
+        help="회사에서 제공하는 이력서 양식 (5MB 이하). 없으면 마크다운만 생성.",
     )
+    if docx_template and docx_template.size > 5 * 1024 * 1024:
+        st.error("DOCX 파일 크기가 5MB를 초과합니다.")
+        st.stop()
 
     # Validation
     can_run = bool(resume_file and company_name and jd_text)
@@ -589,7 +599,7 @@ def _mode_form_answers():
 
     col1, col2 = st.columns(2)
     with col1:
-        company_name = st.text_input("회사명 (선택)", placeholder="예: 카카오")
+        company_name = st.text_input("회사명 (선택)", placeholder="예: 카카오", max_chars=100)
     with col2:
         pass  # spacer
 
@@ -597,12 +607,14 @@ def _mode_form_answers():
         "채용공고 (선택)",
         height=150,
         placeholder="채용공고가 있으면 더 정확한 답변을 생성합니다...",
+        max_chars=10000,
     )
 
     questions_text = st.text_area(
         "문항 붙여넣기",
         height=200,
         placeholder='예:\n1. 자기소개를 해주세요 (500자 이내)\n2. 지원동기를 작성해주세요 (1,000자 이내)\n3. 입사 후 포부를 작성해주세요 (800자 이내)',
+        max_chars=10000,
     )
 
     can_run = bool(resume_file and questions_text)

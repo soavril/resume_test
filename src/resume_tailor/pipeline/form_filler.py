@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from resume_tailor.clients.llm_client import LLMClient
 from resume_tailor.models.resume import TailoredResume
 from resume_tailor.parsers.form_parser import FormQuestion
@@ -45,10 +47,8 @@ async def generate_form_answers(
 
     Returns list of {"question": str, "answer": str, "char_count": int}
     """
-    results = []
-
-    for q in questions:
-        answer = await _answer_question(
+    tasks = [
+        _answer_question(
             llm=llm,
             question=q,
             resume=resume,
@@ -57,7 +57,12 @@ async def generate_form_answers(
             language=language,
             model=model,
         )
+        for q in questions
+    ]
+    answers = list(await asyncio.gather(*tasks))
 
+    results = []
+    for q, answer in zip(questions, answers):
         # Hard truncate if still over limit
         if q.max_length and len(answer) > q.max_length:
             answer = _smart_truncate(answer, q.max_length)

@@ -67,9 +67,31 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         if p.exists():
             raw = yaml.safe_load(p.read_text()) or {}
 
-    return AppConfig(
+    config = AppConfig(
         llm=LLMConfig(**raw.get("llm", {})),
         search=SearchConfig(**raw.get("search", {})),
         pipeline=PipelineConfig(**raw.get("pipeline", {})),
         cache=CacheConfig(**raw.get("cache", {})),
     )
+    _validate_config(config)
+    return config
+
+
+def _validate_config(config: AppConfig) -> None:
+    """Validate config values are within acceptable ranges."""
+    if not 0 <= config.pipeline.qa_threshold <= 100:
+        raise ValueError(
+            f"qa_threshold must be 0-100, got {config.pipeline.qa_threshold}"
+        )
+    if not 0 <= config.pipeline.max_rewrites <= 10:
+        raise ValueError(
+            f"max_rewrites must be 0-10, got {config.pipeline.max_rewrites}"
+        )
+    if not 1 <= config.llm.timeout <= 300:
+        raise ValueError(
+            f"timeout must be 1-300, got {config.llm.timeout}"
+        )
+    if not 1 <= config.cache.ttl_days <= 365:
+        raise ValueError(
+            f"ttl_days must be 1-365, got {config.cache.ttl_days}"
+        )

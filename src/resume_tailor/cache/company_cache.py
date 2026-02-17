@@ -37,7 +37,9 @@ class CompanyCache:
             """)
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(str(self.db_path))
+        conn = sqlite3.connect(str(self.db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        return conn
 
     def get(self, company_name: str) -> CompanyProfile | None:
         """Get cached company profile if not expired."""
