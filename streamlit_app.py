@@ -189,7 +189,15 @@ def _get_config():
 
 def _get_clients():
     config = _get_config()
-    return LLMClient(timeout=config.llm.timeout), SearchClient()
+    try:
+        llm = LLMClient(timeout=config.llm.timeout)
+    except Exception as e:
+        raise RuntimeError(f"LLM 클라이언트 초기화 실패 — ANTHROPIC_API_KEY를 확인하세요: {e}") from e
+    try:
+        search = SearchClient()
+    except Exception as e:
+        raise RuntimeError(f"검색 클라이언트 초기화 실패 — TAVILY_API_KEY를 확인하세요: {e}") from e
+    return llm, search
 
 
 # ---------------------------------------------------------------------------
