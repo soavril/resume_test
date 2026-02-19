@@ -143,21 +143,6 @@ with st.sidebar:
         st.error("이력서 파일 크기가 10MB를 초과합니다.")
         st.stop()
 
-    st.divider()
-
-    with st.expander("사용 기록"):
-        try:
-            from resume_tailor.logging.usage_store import UsageStore
-            store = UsageStore()
-            logs = store.get_logs(limit=10)
-            stats = store.get_monthly_stats()
-            st.metric("이번 달 사용", f"{stats.get('total_runs', 0)}회")
-            st.metric("이번 달 비용", f"${stats.get('total_cost_usd', 0):.4f}")
-            if logs:
-                for log in logs:
-                    st.text(f"{log.timestamp:%m/%d} | {log.company_name or '-'} | 점수:{log.qa_score or '-'} | ${log.estimated_cost_usd:.4f}")
-        except Exception:
-            st.info("사용 기록이 없습니다.")
 
 
 # ---------------------------------------------------------------------------
