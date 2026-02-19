@@ -12,7 +12,7 @@ class TestConfigValidation:
         config = load_config(None)
         # Verify a few representative defaults to confirm the object is valid
         assert config.pipeline.qa_threshold == 80
-        assert config.llm.timeout == 60
+        assert config.llm.timeout == 120
         assert config.cache.ttl_days == 7
 
     def test_invalid_qa_threshold(self, tmp_path):

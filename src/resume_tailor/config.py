@@ -87,7 +87,7 @@ def _validate_config(config: AppConfig) -> None:
         raise ValueError(
             f"max_rewrites must be 0-10, got {config.pipeline.max_rewrites}"
         )
-    if not 1 <= config.llm.timeout <= 300:
+    if not 1 <= config.llm.timeout <= 600:
         raise ValueError(
             f"timeout must be 1-300, got {config.llm.timeout}"
         )
