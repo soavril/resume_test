@@ -105,6 +105,32 @@ class TestQAResult:
         )
         assert result.pass_ is False
 
+    def test_suggestion_examples_default(self):
+        result = QAResult(
+            factual_accuracy=90,
+            keyword_coverage=85,
+            template_compliance=80,
+            overall_score=85,
+            issues=[],
+            suggestions=["키워드를 추가하세요"],
+            pass_=True,
+        )
+        assert result.suggestion_examples == []
+
+    def test_suggestion_examples_provided(self):
+        result = QAResult(
+            factual_accuracy=90,
+            keyword_coverage=85,
+            template_compliance=80,
+            overall_score=85,
+            issues=[],
+            suggestions=["Python 키워드를 추가하세요"],
+            suggestion_examples=["Python 3.11 기반 REST API 개발 경험"],
+            pass_=True,
+        )
+        assert len(result.suggestion_examples) == 1
+        assert "Python" in result.suggestion_examples[0]
+
     def test_serialization(self, sample_qa_result):
         data = sample_qa_result.model_dump(by_alias=True)
         assert "pass" in data

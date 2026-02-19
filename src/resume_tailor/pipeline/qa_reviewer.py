@@ -25,8 +25,14 @@ SYSTEM_PROMPT = """\
   "overall_score": 0-100,
   "issues": ["발견된 문제점 1", "문제점 2"],
   "suggestions": ["개선 제안 1", "제안 2"],
+  "suggestion_examples": ["제안 1에 대한 구체적 예시 문장", "제안 2에 대한 구체적 예시 문장"],
   "pass": true/false
 }
+
+suggestion_examples 작성 규칙:
+- suggestions와 1:1 대응 (같은 인덱스)
+- 각 예시는 이력서에 바로 넣을 수 있는 구체적 문장으로 작성
+- 예: suggestion이 "Python 키워드를 추가하세요"이면, example은 "Python 3.11 기반 REST API 서버 개발 및 운영 (일 평균 10만 요청 처리)"
 
 채점 기준:
 - factual_accuracy: 원본에 없는 정보가 있으면 -20점/건
@@ -71,5 +77,15 @@ class QAReviewer:
         # Handle "pass" being a Python keyword
         if "pass" in data and "pass_" not in data:
             data["pass_"] = data.pop("pass")
+
+        # Defensive padding: ensure suggestion_examples matches suggestions length
+        suggestions = data.get("suggestions", [])
+        examples = data.get("suggestion_examples", [])
+        if len(examples) < len(suggestions):
+            logger.warning(
+                "LLM returned %d suggestion_examples for %d suggestions; padding with empty strings",
+                len(examples), len(suggestions),
+            )
+            data["suggestion_examples"] = examples + [""] * (len(suggestions) - len(examples))
 
         return QAResult(**data)

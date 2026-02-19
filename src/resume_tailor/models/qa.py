@@ -12,6 +12,7 @@ class QAResult(BaseModel):
     overall_score: int  # 0-100
     issues: list[str]
     suggestions: list[str]
+    suggestion_examples: list[str] = []  # 각 suggestion에 대응하는 구체적 예시 문장
     pass_: bool = Field(alias="pass")  # overall_score >= threshold
 
     model_config = {"populate_by_name": True}

@@ -304,8 +304,12 @@ def _mode_resume_tailor():
             pct, label = phases.get(phase, (0, detail))
             progress_bar.progress(pct, text=detail)
 
-        # Clear stale refinement state from previous runs
-        for key in ("refined_resume_md", "refinement_suggestions", "refinement_original"):
+        # Clear stale state from previous runs
+        for key in (
+            "refined_resume_md", "refinement_suggestions", "refinement_original",
+            "pipeline_result", "download_md", "docx_default_bytes",
+            "safe_fname", "result_jd_text", "result_docx_template",
+        ):
             st.session_state.pop(key, None)
 
         try:
@@ -357,35 +361,16 @@ def _mode_resume_tailor():
         # Save markdown internally
         output_dir = Path("./output")
         output_dir.mkdir(parents=True, exist_ok=True)
+        download_md = result.resume.full_markdown
         md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
-        # Use refined version if available
-        download_md = st.session_state.get("refined_resume_md", result.resume.full_markdown)
         md_path.write_text(download_md, encoding="utf-8")
 
-        # Show detected role and completion status
-        role_labels = {"tech": "개발/엔지니어링", "business": "비즈니스/전략", "design": "디자인", "general": "일반"}
-        detected = result.metadata.get("role_category", "general")
-        st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
-
-        # Download buttons: MD + DOCX + PDF in a row
-        safe_fname = f"{company_name}_{result.job.title}".replace(" ", "_")
-
         # Generate DOCX from scratch (no template needed)
-        # For DOCX, use refined resume if available
-        if "refined_resume_md" in st.session_state:
-            docx_resume = TailoredResume(
-                sections=[ResumeSection(id="full", label="전체", content=download_md)],
-                full_markdown=download_md,
-                metadata=result.resume.metadata,
-            )
-        else:
-            docx_resume = result.resume
-
         _docx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
         _docx_tmp.close()
         _docx_tmp_path = Path(_docx_tmp.name)
         try:
-            generate_docx(resume=docx_resume, output_path=_docx_tmp_path, title=f"{company_name} 이력서")
+            generate_docx(resume=result.resume, output_path=_docx_tmp_path, title=f"{company_name} 이력서")
             docx_default_bytes = _docx_tmp_path.read_bytes()
         except Exception:
             logger.exception("DOCX generation failed")
@@ -393,6 +378,34 @@ def _mode_resume_tailor():
         finally:
             _docx_tmp_path.unlink(missing_ok=True)
 
+        safe_fname = f"{company_name}_{result.job.title}".replace(" ", "_")
+
+        # Persist to session_state so results survive rerun
+        st.session_state["pipeline_result"] = result
+        st.session_state["download_md"] = download_md
+        st.session_state["docx_default_bytes"] = docx_default_bytes
+        st.session_state["safe_fname"] = safe_fname
+        st.session_state["result_jd_text"] = jd_text
+        if docx_template:
+            st.session_state["result_docx_template"] = docx_template
+        else:
+            st.session_state.pop("result_docx_template", None)
+
+    # -----------------------------------------------------------------------
+    # Render results from session_state (survives rerun after download click)
+    # -----------------------------------------------------------------------
+    if "pipeline_result" in st.session_state:
+        result = st.session_state["pipeline_result"]
+        download_md = st.session_state.get("refined_resume_md", st.session_state["download_md"])
+        docx_default_bytes = st.session_state["docx_default_bytes"]
+        safe_fname = st.session_state["safe_fname"]
+
+        # Show detected role and completion status
+        role_labels = {"tech": "개발/엔지니어링", "business": "비즈니스/전략", "design": "디자인", "general": "일반"}
+        detected = result.metadata.get("role_category", "general")
+        st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
+
+        # Download buttons: MD + DOCX + PDF in a row
         dl_cols = st.columns(3) if _PDF_AVAILABLE else st.columns(2)
         with dl_cols[0]:
             st.download_button(
@@ -447,17 +460,19 @@ def _mode_resume_tailor():
                 max_chars=500,
                 key="refine_input",
             )
+            _refine_jd = st.session_state.get("result_jd_text", "")
             if st.button("대안 생성", key="btn_refine") and selected.strip():
                 from resume_tailor.pipeline.sentence_refiner import SentenceRefiner
 
-                refiner = SentenceRefiner(llm)
+                _refine_llm = LLMClient(timeout=_get_config().llm.timeout)
+                refiner = SentenceRefiner(_refine_llm)
                 with st.spinner("대안 생성 중..."):
                     try:
                         suggestions = asyncio.run(
                             refiner.refine(
                                 selected_text=selected,
                                 full_resume=current_md,
-                                jd_text=jd_text,
+                                jd_text=_refine_jd,
                             )
                         )
                     except Exception:
@@ -516,8 +531,12 @@ def _mode_resume_tailor():
                     st.warning(issue)
             if qa.suggestions:
                 st.subheader("개선 제안")
-                for sug in qa.suggestions:
+                for i, sug in enumerate(qa.suggestions):
                     st.info(sug)
+                    example = qa.suggestion_examples[i] if i < len(qa.suggestion_examples) else ""
+                    if example:
+                        with st.expander("예시 보기"):
+                            st.markdown(example)
 
         with tab_company:
             cp = result.company
@@ -531,16 +550,18 @@ def _mode_resume_tailor():
                 for news in cp.recent_news[:5]:
                     st.markdown(f"- {news}")
 
-        # DOCX generation
-        if docx_template:
+        # DOCX template fill
+        _docx_tmpl = st.session_state.get("result_docx_template")
+        if _docx_tmpl:
             st.divider()
             st.subheader("DOCX 다운로드")
 
-            tmp_docx_in = _save_upload_to_tmp(docx_template)
+            tmp_docx_in = _save_upload_to_tmp(_docx_tmpl)
             _tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
             _tmp_out.close()
             tmp_docx_out = Path(_tmp_out.name)
 
+            _fill_llm = LLMClient(timeout=_get_config().llm.timeout)
             try:
                 with st.spinner("DOCX 양식에 내용 채우는 중..."):
                     placeholders = list_docx_placeholders(tmp_docx_in)
@@ -557,22 +578,22 @@ def _mode_resume_tailor():
                                     template_path=tmp_docx_in,
                                     resume=result.resume,
                                     output_path=tmp_docx_out,
-                                    llm=llm,
+                                    llm=_fill_llm,
                                 )
                             )
                         except Exception:
                             logger.exception("DOCX smart fill failed")
                             st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
-                            return
 
-                docx_bytes = tmp_docx_out.read_bytes()
-                st.download_button(
-                    label="DOCX 다운로드",
-                    data=docx_bytes,
-                    file_name=f"{company_name}_이력서.docx",
-                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    type="primary",
-                )
+                if tmp_docx_out.exists():
+                    docx_bytes = tmp_docx_out.read_bytes()
+                    st.download_button(
+                        label="DOCX 다운로드",
+                        data=docx_bytes,
+                        file_name=f"{safe_fname}_이력서.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        type="primary",
+                    )
             finally:
                 tmp_docx_in.unlink(missing_ok=True)
                 tmp_docx_out.unlink(missing_ok=True)
