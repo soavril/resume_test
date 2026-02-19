@@ -73,7 +73,7 @@ try:
         return weasyprint.HTML(string=full_html).write_pdf()
 
     _PDF_AVAILABLE = True
-except ImportError:
+except (ImportError, OSError):
     _PDF_AVAILABLE = False
 
 # ---------------------------------------------------------------------------
