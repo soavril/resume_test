@@ -123,7 +123,10 @@ class ResumeWriter:
         )
 
         if not isinstance(data, dict):
-            data = {"sections": [], "full_markdown": str(data)}
+            if isinstance(data, list):
+                data = {"sections": data, "full_markdown": ""}
+            else:
+                data = {"sections": [], "full_markdown": str(data)}
 
         sections = [ResumeSection(**s) for s in data.get("sections", [])]
         full_md = data.get("full_markdown", "")
