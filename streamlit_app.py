@@ -359,7 +359,7 @@ def _mode_resume_tailor():
             md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
             md_path.write_text(download_md, encoding="utf-8")
         except OSError:
-            pass
+            logger.debug("Could not write markdown to disk (read-only filesystem)")
 
         # Generate DOCX from scratch (no template needed)
         _docx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")

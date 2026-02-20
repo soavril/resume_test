@@ -240,7 +240,7 @@ def _render_section(doc: Document, label: str, content: str) -> None:
             p = doc.add_paragraph(style="List Bullet")
             _add_rich_text(p, line[2:])
             # Check for sub-bullets
-            while i + 1 < len(lines) and lines[i + 1].strip().startswith("  - "):
+            while i + 1 < len(lines) and lines[i + 1].startswith("  - "):
                 i += 1
                 sp = doc.add_paragraph(style="List Bullet 2")
                 _add_rich_text(sp, lines[i].strip()[2:])
