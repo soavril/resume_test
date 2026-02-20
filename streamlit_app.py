@@ -351,12 +351,15 @@ def _mode_resume_tailor():
         if not cached_profile:
             cache.put(company_name, result.company)
 
-        # Save markdown internally
-        output_dir = Path("./output")
-        output_dir.mkdir(parents=True, exist_ok=True)
+        # Save markdown internally (best-effort; Cloud filesystem may be read-only)
         download_md = clean_markdown(result.resume.full_markdown)
-        md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
-        md_path.write_text(download_md, encoding="utf-8")
+        try:
+            output_dir = Path("./output")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
+            md_path.write_text(download_md, encoding="utf-8")
+        except OSError:
+            pass
 
         # Generate DOCX from scratch (no template needed)
         _docx_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
