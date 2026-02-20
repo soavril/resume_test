@@ -11,6 +11,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt, RGBColor
 
 from resume_tailor.models.resume import TailoredResume
+from resume_tailor.parsers.resume_parser import EMOJI_PATTERN
 
 
 # ---------------------------------------------------------------------------
@@ -153,13 +154,7 @@ def _md_to_plain(md: str) -> str:
     # Remove horizontal rules
     text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
     # Remove emojis
-    text = re.sub(
-        r"[\U0001f4e7\U0001f4de\U0001f4cd\U0001f4bc\U0001f4c5\U0001f393"
-        r"\U0001f3e2\U0001f4dd\U0001f4c4\U0001f517\U0001f310"
-        r"\u260e\u2709\u2706\u2702\U0001f4f1]\s*",
-        "",
-        text,
-    )
+    text = re.sub(EMOJI_PATTERN, "", text)
     # Remove excessive blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -279,13 +274,7 @@ def _add_rich_text(paragraph, text: str) -> None:
 
 def _strip_emoji(text: str) -> str:
     """Remove common emoji/icon characters."""
-    return re.sub(
-        r"[\U0001f4e7\U0001f4de\U0001f4cd\U0001f4bc\U0001f4c5\U0001f393"
-        r"\U0001f3e2\U0001f4dd\U0001f4c4\U0001f517\U0001f310"
-        r"\u260e\u2709\u2706\u2702\U0001f4f1]\s*",
-        "",
-        text,
-    )
+    return re.sub(EMOJI_PATTERN, "", text)
 
 
 def _strip_md_plain(text: str) -> str:

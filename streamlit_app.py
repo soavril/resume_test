@@ -38,7 +38,7 @@ from resume_tailor.clients.search_client import SearchClient
 from resume_tailor.config import load_config
 from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.parsers.form_parser import parse_text
-from resume_tailor.parsers.resume_parser import _clean_markdown, parse_resume
+from resume_tailor.parsers.resume_parser import clean_markdown, parse_resume
 from resume_tailor.pipeline.form_filler import (
     extract_structured_fields,
     generate_form_answers,
@@ -354,7 +354,7 @@ def _mode_resume_tailor():
         # Save markdown internally
         output_dir = Path("./output")
         output_dir.mkdir(parents=True, exist_ok=True)
-        download_md = _clean_markdown(result.resume.full_markdown)
+        download_md = clean_markdown(result.resume.full_markdown)
         md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
         md_path.write_text(download_md, encoding="utf-8")
 

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor.parsers.jd_parser import load_jd_file, parse_jd
-from resume_tailor.parsers.resume_parser import _clean_markdown, parse_resume
+from resume_tailor.parsers.resume_parser import clean_markdown, parse_resume
 
 
 class TestJDParser:
@@ -54,7 +54,7 @@ class TestCleanMarkdown:
 
     def test_removes_emoji_icons(self):
         text = "📧이메일:test@example.com\n📞연락처:010-1234-5678\n📍주소:서울시"
-        result = _clean_markdown(text)
+        result = clean_markdown(text)
         assert "📧" not in result
         assert "📞" not in result
         assert "📍" not in result
@@ -63,13 +63,13 @@ class TestCleanMarkdown:
 
     def test_normalizes_whitespace(self):
         text = "제목\n\n\n\n\n본문  내용   여기\n\n\n\n끝"
-        result = _clean_markdown(text)
+        result = clean_markdown(text)
         assert "\n\n\n" not in result
         assert "본문 내용 여기" in result
 
     def test_normalizes_bullets(self):
         text = "● 항목1\n•  항목2\n◆ 항목3\n*   항목4"
-        result = _clean_markdown(text)
+        result = clean_markdown(text)
         assert "- 항목1" in result
         assert "- 항목2" in result
         assert "- 항목3" in result
@@ -79,7 +79,7 @@ class TestCleanMarkdown:
 
     def test_removes_unicode_artifacts(self):
         text = "\ufeffHello\u200bWorld\u200c테스트\u00ad끝"
-        result = _clean_markdown(text)
+        result = clean_markdown(text)
         assert "\ufeff" not in result
         assert "\u200b" not in result
         assert "\u200c" not in result
@@ -88,7 +88,7 @@ class TestCleanMarkdown:
 
     def test_preserves_content(self):
         text = "# 최홍익\n\n비즈니스 전략 및 경영관리 전문가\n\n- 경력: 6년 2개월\n- 이메일: test@example.com"
-        result = _clean_markdown(text)
+        result = clean_markdown(text)
         assert "# 최홍익" in result
         assert "비즈니스 전략 및 경영관리 전문가" in result
         assert "경력: 6년 2개월" in result
