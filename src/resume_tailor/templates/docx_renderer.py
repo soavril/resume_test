@@ -152,7 +152,14 @@ def _md_to_plain(md: str) -> str:
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     # Remove horizontal rules
     text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
-    # Clean up emoji (optional, keep them)
+    # Remove emojis
+    text = re.sub(
+        r"[\U0001f4e7\U0001f4de\U0001f4cd\U0001f4bc\U0001f4c5\U0001f393"
+        r"\U0001f3e2\U0001f4dd\U0001f4c4\U0001f517\U0001f310"
+        r"\u260e\u2709\u2706\u2702\U0001f4f1]\s*",
+        "",
+        text,
+    )
     # Remove excessive blank lines
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -221,32 +228,69 @@ def _render_section(doc: Document, label: str, content: str) -> None:
             i += 1
             continue
 
+        # Skip horizontal rules
+        if re.match(r"^-{3,}\s*$", line):
+            i += 1
+            continue
+
         # Sub-heading (### )
         if line.startswith("### "):
-            h = doc.add_heading(_strip_md(line[4:]), level=3)
+            h = doc.add_heading(_strip_md_plain(line[4:]), level=3)
             h.runs[0].font.size = Pt(11)
             i += 1
             continue
 
         # Bullet point
         if line.startswith("- ") or line.startswith("* "):
-            text = _strip_md(line[2:])
-            p = doc.add_paragraph(text, style="List Bullet")
+            p = doc.add_paragraph(style="List Bullet")
+            _add_rich_text(p, line[2:])
             # Check for sub-bullets
             while i + 1 < len(lines) and lines[i + 1].strip().startswith("  - "):
                 i += 1
-                sub = _strip_md(lines[i].strip()[2:])
-                sp = doc.add_paragraph(sub, style="List Bullet 2")
+                sp = doc.add_paragraph(style="List Bullet 2")
+                _add_rich_text(sp, lines[i].strip()[2:])
             i += 1
             continue
 
         # Regular paragraph
-        p = doc.add_paragraph(_strip_md(line))
+        p = doc.add_paragraph()
+        _add_rich_text(p, line)
         i += 1
 
 
-def _strip_md(text: str) -> str:
-    """Strip inline markdown formatting."""
+def _add_rich_text(paragraph, text: str) -> None:
+    """Add text to a paragraph with bold/link formatting preserved."""
+    # Remove emojis first
+    text = _strip_emoji(text)
+    # Remove link syntax [text](url) → text
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+
+    # Split on bold markers and render with actual bold
+    parts = re.split(r"(\*{2,3}.+?\*{2,3})", text)
+    for part in parts:
+        bold_match = re.match(r"\*{2,3}(.+?)\*{2,3}", part)
+        if bold_match:
+            run = paragraph.add_run(bold_match.group(1))
+            run.bold = True
+        else:
+            if part:
+                paragraph.add_run(part)
+
+
+def _strip_emoji(text: str) -> str:
+    """Remove common emoji/icon characters."""
+    return re.sub(
+        r"[\U0001f4e7\U0001f4de\U0001f4cd\U0001f4bc\U0001f4c5\U0001f393"
+        r"\U0001f3e2\U0001f4dd\U0001f4c4\U0001f517\U0001f310"
+        r"\u260e\u2709\u2706\u2702\U0001f4f1]\s*",
+        "",
+        text,
+    )
+
+
+def _strip_md_plain(text: str) -> str:
+    """Strip inline markdown formatting to plain text."""
+    text = _strip_emoji(text)
     text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
     return text

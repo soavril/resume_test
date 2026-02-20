@@ -38,7 +38,7 @@ from resume_tailor.clients.search_client import SearchClient
 from resume_tailor.config import load_config
 from resume_tailor.models.resume import ResumeSection, TailoredResume
 from resume_tailor.parsers.form_parser import parse_text
-from resume_tailor.parsers.resume_parser import parse_resume
+from resume_tailor.parsers.resume_parser import _clean_markdown, parse_resume
 from resume_tailor.pipeline.form_filler import (
     extract_structured_fields,
     generate_form_answers,
@@ -354,7 +354,7 @@ def _mode_resume_tailor():
         # Save markdown internally
         output_dir = Path("./output")
         output_dir.mkdir(parents=True, exist_ok=True)
-        download_md = result.resume.full_markdown
+        download_md = _clean_markdown(result.resume.full_markdown)
         md_path = output_dir / f"{company_name}_{result.job.title}.md".replace(" ", "_")
         md_path.write_text(download_md, encoding="utf-8")
 
@@ -435,8 +435,8 @@ def _mode_resume_tailor():
                     st.warning("PDF 생성 실패")
 
         # Display results in tabs
-        tab_resume, tab_qa, tab_company = st.tabs(
-            ["생성된 이력서", "QA 점수", "회사 분석"]
+        tab_resume, tab_company = st.tabs(
+            ["생성된 이력서", "회사 분석"]
         )
 
         with tab_resume:
@@ -509,27 +509,6 @@ def _mode_resume_tailor():
                             del st.session_state["refinement_suggestions"]
                             st.session_state.pop("refinement_original", None)
                             st.rerun()
-
-        with tab_qa:
-            qa = result.qa
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("정확성", f"{qa.factual_accuracy}")
-            c2.metric("키워드", f"{qa.keyword_coverage}")
-            c3.metric("템플릿", f"{qa.template_compliance}")
-            c4.metric("총점", f"{qa.overall_score}", delta="PASS" if qa.pass_ else "FAIL")
-
-            if qa.issues:
-                st.subheader("주의사항")
-                for issue in qa.issues:
-                    st.warning(issue)
-            if qa.suggestions:
-                st.subheader("개선 제안")
-                for i, sug in enumerate(qa.suggestions):
-                    st.info(sug)
-                    example = qa.suggestion_examples[i] if i < len(qa.suggestion_examples) else ""
-                    if example:
-                        with st.expander("예시 보기"):
-                            st.markdown(example)
 
         with tab_company:
             cp = result.company

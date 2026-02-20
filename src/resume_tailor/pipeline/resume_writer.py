@@ -39,10 +39,11 @@ SYSTEM_PROMPT_KO = """\
 5. {experience_format}
 6. ATS 최적화를 위해 키워드를 자연스럽게 포함합니다.
 7. **과장 금지**: "혁신적", "획기적", "탁월한", "독보적" 같은 수식어를 사용하지 마세요. 사실 기반의 담백한 톤으로 작성하세요.
-8. 원본 이력서의 표현 수준과 톤을 유지하세요. 원본보다 과도하게 화려하게 쓰지 마세요.
-9. 전체 분량은 A4 2장 이내로 작성합니다. 경력기술서 수준의 상세한 경력 서술을 포함하세요.
-10. **반드시 한국어로만 작성합니다.** 채용공고가 영문이더라도 이력서 본문은 100% 한국어로 작성하세요. 영문 키워드를 그대로 삽입하지 마세요. 회사명, 제품명 등 고유명사와 TOEIC, JLPT 같은 공인 시험명만 영문을 허용합니다.
-11. 원본 이력서에 없는 항목(이메일, 연락처, 주소 등)을 플레이스홀더로 만들지 마세요. 원본에 있는 정보만 사용합니다.
+8. **이모지/아이콘 금지**: 📧, 📱, 🔗, 📍 등 이모지나 특수 아이콘 문자를 절대 사용하지 마세요. 텍스트로만 작성합니다.
+9. 원본 이력서의 표현 수준과 톤을 유지하세요. 원본보다 과도하게 화려하게 쓰지 마세요.
+10. 전체 분량은 A4 2장 이내로 작성합니다. 경력기술서 수준의 상세한 경력 서술을 포함하세요.
+11. **반드시 한국어로만 작성합니다.** 채용공고가 영문이더라도 이력서 본문은 100% 한국어로 작성하세요. 영문 키워드를 그대로 삽입하지 마세요. 회사명, 제품명 등 고유명사와 TOEIC, JLPT 같은 공인 시험명만 영문을 허용합니다.
+12. 원본 이력서에 없는 항목(이메일, 연락처, 주소 등)을 플레이스홀더로 만들지 마세요. 원본에 있는 정보만 사용합니다.
 
 응답은 반드시 아래 JSON 형식으로:
 {{
@@ -65,8 +66,9 @@ Writing principles:
 5. {experience_format}
 6. Include ATS-optimized keywords naturally.
 7. **No exaggeration**: Avoid words like "revolutionary", "groundbreaking", "exceptional". Write in a fact-based, professional tone.
-8. Maintain a tone consistent with the original resume. Do not over-embellish.
-9. Keep the resume to 1 page. Be concise — prioritize impact over exhaustiveness.
+8. **No emojis/icons**: Never use emoji or icon characters like 📧, 📱, 🔗, 📍. Use plain text only.
+9. Maintain a tone consistent with the original resume. Do not over-embellish.
+10. Keep the resume to 1 page. Be concise — prioritize impact over exhaustiveness.
 
 Respond ONLY in this JSON format:
 {{
