@@ -158,6 +158,44 @@ class TestResumeWriter:
         # Should build markdown from sections
         assert "인적사항" in result.full_markdown
 
+    @pytest.mark.asyncio
+    async def test_list_return_coerced_to_sections(
+        self, mock_llm_client, sample_strategy, sample_resume_text
+    ):
+        """When LLM returns a JSON array instead of dict, treat as sections list."""
+        from resume_tailor.templates.loader import load_template
+
+        mock_llm_client.generate_json.return_value = [
+            {"id": "header", "label": "인적사항", "content": "# 홍길동"},
+            {"id": "summary", "label": "자기소개", "content": "백엔드 개발자"},
+        ]
+        writer = ResumeWriter(mock_llm_client)
+        template = load_template("korean_standard")
+        result = await writer.write(sample_strategy, sample_resume_text, template)
+
+        assert isinstance(result, TailoredResume)
+        assert len(result.sections) == 2
+        assert result.sections[0].id == "header"
+        # full_markdown should be built from sections, not str(list)
+        assert "인적사항" in result.full_markdown
+        assert "[{" not in result.full_markdown
+
+    @pytest.mark.asyncio
+    async def test_string_return_stored_as_markdown(
+        self, mock_llm_client, sample_strategy, sample_resume_text
+    ):
+        """When LLM returns a plain string, store it as full_markdown."""
+        from resume_tailor.templates.loader import load_template
+
+        mock_llm_client.generate_json.return_value = "# 홍길동\n\n백엔드 개발자입니다."
+        writer = ResumeWriter(mock_llm_client)
+        template = load_template("korean_standard")
+        result = await writer.write(sample_strategy, sample_resume_text, template)
+
+        assert isinstance(result, TailoredResume)
+        assert len(result.sections) == 0
+        assert "홍길동" in result.full_markdown
+
 
 class TestQAReviewer:
     @pytest.mark.asyncio
