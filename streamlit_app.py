@@ -237,19 +237,19 @@ def _mode_resume_tailor():
 
         resume_text = _parse_uploaded_resume(resume_file)
 
-        # Resume quality check
-        from resume_tailor.models.interview import check_resume_quality
-        quality = check_resume_quality(resume_text)
-        if quality.richness_score < 0.4:
-            details = []
-            if quality.experience_items < 3:
-                details.append(f"경력 항목: {quality.experience_items}개 (권장: 3개 이상)")
-            if not quality.has_quantitative:
-                details.append("정량적 성과: 없음 (권장: 매출, 사용자 수 등 수치 포함)")
-            if quality.word_count < 150:
-                details.append(f"분량: {quality.word_count}단어 (권장: 150단어 이상)")
-            warning_msg = "이력서 내용이 다소 간략합니다.\n" + "\n".join(f"- {d}" for d in details)
-            st.warning(warning_msg)
+        # Resume quality check — disabled until InterviewAgent (Phase 6C) is ready
+        # from resume_tailor.models.interview import check_resume_quality
+        # quality = check_resume_quality(resume_text)
+        # if quality.richness_score < 0.4:
+        #     details = []
+        #     if quality.experience_items < 3:
+        #         details.append(f"경력 항목: {quality.experience_items}개 (권장: 3개 이상)")
+        #     if not quality.has_quantitative:
+        #         details.append("정량적 성과: 없음 (권장: 매출, 사용자 수 등 수치 포함)")
+        #     if quality.word_count < 150:
+        #         details.append(f"분량: {quality.word_count}단어 (권장: 150단어 이상)")
+        #     warning_msg = "이력서 내용이 다소 간략합니다.\n" + "\n".join(f"- {d}" for d in details)
+        #     st.warning(warning_msg)
 
         config = _get_config()
         llm, search = _get_clients()
