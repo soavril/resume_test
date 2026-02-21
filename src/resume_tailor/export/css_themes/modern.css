@@ -1,0 +1,42 @@
+body {
+  font-size: 9.5pt;
+  line-height: 1.55;
+}
+
+h1 {
+  color: #0d6e6e;
+  border-bottom: none;
+  padding-bottom: 4pt;
+  position: relative;
+}
+
+h1::after {
+  content: '';
+  display: block;
+  width: 60pt;
+  height: 3pt;
+  background: #0d6e6e;
+  margin-top: 6pt;
+}
+
+h2 {
+  color: #0d6e6e;
+  border-bottom: none;
+  border-left: 3pt solid #0d6e6e;
+  padding-left: 8pt;
+  font-size: 10.5pt;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+h3 {
+  color: #1a5c5c;
+}
+
+li::marker {
+  color: #0d6e6e;
+}
+
+table th {
+  background-color: #e6f3f3;
+}

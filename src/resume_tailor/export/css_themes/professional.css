@@ -1,0 +1,21 @@
+h1 {
+  color: #1B365D;
+  border-bottom: 2.5pt solid #1B365D;
+  padding-bottom: 8pt;
+}
+
+h2 {
+  color: #1B365D;
+  border-bottom: 1pt solid #d0d5dd;
+  text-transform: uppercase;
+  font-size: 11pt;
+  letter-spacing: 0.06em;
+}
+
+h3 {
+  color: #2d3748;
+}
+
+li::marker {
+  color: #1B365D;
+}

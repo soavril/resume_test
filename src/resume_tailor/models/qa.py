@@ -6,9 +6,11 @@ from pydantic import BaseModel, Field
 
 
 class QAResult(BaseModel):
-    factual_accuracy: int  # 0-100
-    keyword_coverage: int  # 0-100
-    template_compliance: int  # 0-100
+    factual_accuracy: int  # 0-100, weight 30%
+    keyword_coverage: int  # 0-100, weight 20%
+    template_compliance: int  # 0-100, weight 20%
+    content_richness: int = 0  # 0-100, weight 20% (NEW)
+    detail_depth: int = 0  # 0-100, weight 10% (NEW)
     overall_score: int  # 0-100
     issues: list[str]
     suggestions: list[str]

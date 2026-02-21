@@ -44,6 +44,11 @@ from resume_tailor.pipeline.form_filler import (
 )
 from resume_tailor.pipeline.orchestrator import PipelineOrchestrator
 from resume_tailor.parsers.jd_image_parser import extract_jd_from_file
+from resume_tailor.templates.docx_renderer import (
+    fill_docx_template,
+    list_docx_placeholders,
+)
+from resume_tailor.templates.smart_filler import smart_fill_docx
 
 # ---------------------------------------------------------------------------
 # Page config
@@ -213,6 +218,15 @@ def _mode_resume_tailor():
                     logger.exception("JD image extraction failed")
                     st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
+    docx_template_file = st.file_uploader(
+        "DOCX 양식 업로드 (선택)",
+        type=["docx"],
+        help="이력서 양식 DOCX 파일 — 생성된 내용으로 양식을 채워 DOCX로 다운로드합니다 (10MB 이하)",
+    )
+    if docx_template_file and docx_template_file.size > 10 * 1024 * 1024:
+        st.error("DOCX 양식 파일 크기가 10MB를 초과합니다.")
+        docx_template_file = None
+
     # Validation
     can_run = bool(resume_file and company_name and jd_text)
 
@@ -222,6 +236,21 @@ def _mode_resume_tailor():
             return
 
         resume_text = _parse_uploaded_resume(resume_file)
+
+        # Resume quality check
+        from resume_tailor.models.interview import check_resume_quality
+        quality = check_resume_quality(resume_text)
+        if quality.richness_score < 0.4:
+            details = []
+            if quality.experience_items < 3:
+                details.append(f"경력 항목: {quality.experience_items}개 (권장: 3개 이상)")
+            if not quality.has_quantitative:
+                details.append("정량적 성과: 없음 (권장: 매출, 사용자 수 등 수치 포함)")
+            if quality.word_count < 150:
+                details.append(f"분량: {quality.word_count}단어 (권장: 150단어 이상)")
+            warning_msg = "이력서 내용이 다소 간략합니다.\n" + "\n".join(f"- {d}" for d in details)
+            st.warning(warning_msg)
+
         config = _get_config()
         llm, search = _get_clients()
 
@@ -262,6 +291,8 @@ def _mode_resume_tailor():
             "refined_resume_md", "refinement_suggestions", "refinement_original",
             "pipeline_result", "download_md",
             "safe_fname", "result_jd_text",
+            "result_docx_template", "result_docx_template_name",
+            "filled_docx_bytes", "filled_docx_name",
         ):
             st.session_state.pop(key, None)
 
@@ -329,6 +360,11 @@ def _mode_resume_tailor():
         st.session_state["safe_fname"] = safe_fname
         st.session_state["result_jd_text"] = jd_text
 
+        # Save DOCX template bytes for post-pipeline fill
+        if docx_template_file:
+            st.session_state["result_docx_template"] = docx_template_file.getvalue()
+            st.session_state["result_docx_template_name"] = docx_template_file.name
+
     # -----------------------------------------------------------------------
     # Render results from session_state (survives rerun after download click)
     # -----------------------------------------------------------------------
@@ -342,14 +378,47 @@ def _mode_resume_tailor():
         detected = result.metadata.get("role_category", "general")
         st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
 
-        # Download button: MD only
-        st.download_button(
-            label="MD 다운로드",
-            data=download_md.encode("utf-8"),
-            file_name=f"{safe_fname}.md",
-            mime="text/markdown",
-            type="secondary",
+        # PDF theme and download
+        from resume_tailor.export.pdf_renderer import render_pdf, AVAILABLE_THEMES, render_html_preview
+
+        theme_labels = {"professional": "프로페셔널", "modern": "모던", "minimal": "미니멀"}
+        selected_theme = st.selectbox(
+            "PDF 테마",
+            AVAILABLE_THEMES,
+            format_func=lambda t: theme_labels.get(t, t),
         )
+
+        try:
+            pdf_bytes = render_pdf(download_md, theme=selected_theme, title=f"{safe_fname}")
+            pdf_available = True
+        except Exception:
+            logger.exception("PDF rendering failed")
+            pdf_available = False
+
+        col1, col2 = st.columns(2)
+        with col1:
+            if pdf_available:
+                st.download_button(
+                    label="PDF 다운로드",
+                    data=pdf_bytes,
+                    file_name=f"{safe_fname}.pdf",
+                    mime="application/pdf",
+                    type="primary",
+                )
+            else:
+                st.warning("PDF 생성 실패 — MD를 다운로드하세요")
+        with col2:
+            st.download_button(
+                label="MD 다운로드",
+                data=download_md.encode("utf-8"),
+                file_name=f"{safe_fname}.md",
+                mime="text/markdown",
+                type="secondary",
+            )
+
+        with st.expander("PDF 미리보기", expanded=False):
+            preview_html = render_html_preview(download_md, theme=selected_theme, title=safe_fname)
+            st.components.v1.html(preview_html, height=600, scrolling=True)
 
         # Display results in tabs
         tab_resume, tab_company = st.tabs(
@@ -438,6 +507,69 @@ def _mode_resume_tailor():
                 st.markdown("**최근 소식**")
                 for news in cp.recent_news[:5]:
                     st.markdown(f"- {news}")
+
+        # DOCX template fill section
+        if "result_docx_template" in st.session_state:
+            st.divider()
+            st.subheader("DOCX 양식 채우기")
+            st.caption("업로드한 DOCX 양식에 생성된 이력서 내용을 자동으로 채워넣습니다.")
+
+            template_bytes = st.session_state["result_docx_template"]
+            template_name = st.session_state.get("result_docx_template_name", "template.docx")
+            st.caption(f"업로드한 양식({template_name})에 생성된 이력서 내용을 자동으로 채워넣습니다.")
+
+            if st.button("양식에 채워넣기", key="btn_docx_fill"):
+                with st.spinner("DOCX 양식 분석 및 채우기 중..."):
+                    tmp_template_path = None
+                    tmp_output_path = None
+                    try:
+                        tmp_template = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_template.write(template_bytes)
+                        tmp_template.close()
+                        tmp_template_path = tmp_template.name
+
+                        tmp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
+                        tmp_output.close()
+                        tmp_output_path = tmp_output.name
+
+                        placeholders = list_docx_placeholders(tmp_template_path)
+                        if placeholders:
+                            st.info(f"플레이스홀더 발견: {', '.join(placeholders)}")
+                            fill_docx_template(
+                                tmp_template_path, result.resume, tmp_output_path,
+                            )
+                        else:
+                            st.info("플레이스홀더 없음 — AI 분석으로 양식을 채웁니다...")
+                            fill_llm = LLMClient(timeout=_get_config().llm.timeout)
+                            asyncio.run(
+                                smart_fill_docx(
+                                    tmp_template_path, result.resume,
+                                    tmp_output_path, fill_llm,
+                                )
+                            )
+
+                        filled_bytes = Path(tmp_output_path).read_bytes()
+                        st.session_state["filled_docx_bytes"] = filled_bytes
+                        st.session_state["filled_docx_name"] = f"{safe_fname}.docx"
+                    except Exception:
+                        logger.exception("DOCX template fill failed")
+                        st.error("DOCX 양식 채우기에 실패했습니다.")
+                        st.session_state.pop("filled_docx_bytes", None)
+                        st.session_state.pop("filled_docx_name", None)
+                    finally:
+                        if tmp_template_path:
+                            Path(tmp_template_path).unlink(missing_ok=True)
+                        if tmp_output_path:
+                            Path(tmp_output_path).unlink(missing_ok=True)
+
+            if "filled_docx_bytes" in st.session_state:
+                st.download_button(
+                    label="DOCX 다운로드",
+                    data=st.session_state["filled_docx_bytes"],
+                    file_name=st.session_state.get("filled_docx_name", f"{safe_fname}.docx"),
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    type="primary",
+                )
 
     elif not can_run:
         missing = []
