@@ -351,6 +351,13 @@ def _set_tc_text(tc_element: Any, text: str, table: Any | None = None) -> None:
             "hasTextRef": "0",
         })
 
+    # Remove all paragraphs except the first — extra empty <hp:p> elements
+    # push text to the bottom of the cell in large cells.
+    all_paras = sublist.findall(f"{_HP}p")
+    if len(all_paras) > 1:
+        for extra_p in all_paras[1:]:
+            sublist.remove(extra_p)
+
     paragraph = sublist.find(f"{_HP}p")
     if paragraph is None:
         paragraph = LET.SubElement(sublist, f"{_HP}p", {
@@ -361,9 +368,11 @@ def _set_tc_text(tc_element: Any, text: str, table: Any | None = None) -> None:
             "columnBreak": "0",
         })
 
-    # Clear existing runs (to avoid duplicating text)
+    # Clear existing runs and leftover text nodes
     for old_run in paragraph.findall(f"{_HP}run"):
         paragraph.remove(old_run)
+    for old_t in paragraph.findall(f"{_HP}t"):
+        paragraph.remove(old_t)
 
     run = LET.SubElement(paragraph, f"{_HP}run", {"charPrIDRef": "0"})
     t_elem = LET.SubElement(run, f"{_HP}t")
