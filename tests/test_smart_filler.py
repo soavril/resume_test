@@ -10,6 +10,7 @@ from docx import Document
 
 from resume_tailor.templates.smart_filler import (
     _build_column_header_map,
+    _is_header_row,
     execute_fill_plan,
     extract_docx_structure,
     format_structure_for_llm,
@@ -343,3 +344,74 @@ class TestBuildColumnHeaderMap:
         assert 0 in result
         assert 2 in result
         assert 1 not in result
+
+
+# ---------------------------------------------------------------------------
+# _is_header_row tests
+# ---------------------------------------------------------------------------
+
+class TestIsHeaderRow:
+    """Tests for _is_header_row header/data row classification."""
+
+    def _make_cells(self, texts: list[str]) -> list[dict]:
+        """Build cell dicts from a list of texts (empty string = empty cell)."""
+        cells = []
+        for i, t in enumerate(texts):
+            cell: dict = {"col": i, "text": t}
+            if not t:
+                cell["empty"] = True
+            cells.append(cell)
+        return cells
+
+    def test_full_header_row_0_is_header(self):
+        """Row 0 with all cells filled is classified as header."""
+        cells = self._make_cells(["학력사항", "입학", "졸업", "학교명", "전공"])
+        all_rows = [{"row": 0, "cells": cells}]
+
+        assert _is_header_row(0, cells, all_rows) is True
+
+    def test_data_input_row_with_labels_and_empty_cells(self):
+        """Row with label keywords but many empty cells is NOT a header (data input row)."""
+        # Simulates: "년 월 | 년 월 | 고등학교 | (empty) | (empty) | (empty) | (empty) | (empty)"
+        cells = self._make_cells(["년 월", "년 월", "고등학교", "", "", "", "", ""])
+        all_rows = [
+            {"row": 0, "cells": self._make_cells(["학력", "입학", "졸업", "학교명", "전공", "학위", "구분", "비고"])},
+            {"row": 1, "cells": cells},
+        ]
+
+        assert _is_header_row(1, cells, all_rows) is False
+
+    def test_row_0_with_many_empty_cells_is_not_header(self):
+        """Row 0 with mostly empty cells is NOT a header (data input row pattern)."""
+        cells = self._make_cells(["년 월", "", "", "", ""])
+        all_rows = [{"row": 0, "cells": cells}]
+
+        assert _is_header_row(0, cells, all_rows) is False
+
+    def test_all_filled_label_row_is_header(self):
+        """Row with all cells containing label keywords is a header."""
+        cells = self._make_cells(["기간", "회사", "직위", "담당업무"])
+        all_rows = [
+            {"row": 0, "cells": cells},
+            {"row": 1, "cells": self._make_cells(["", "", "", ""])},
+        ]
+
+        assert _is_header_row(0, cells, all_rows) is True
+
+    def test_non_label_filled_row_is_not_header(self):
+        """Row 5 with non-label data text is NOT a header."""
+        cells = self._make_cells(["2020.03", "2024.02", "서울대학교", "컴퓨터공학"])
+        all_rows = [{"row": 5, "cells": cells}]
+
+        assert _is_header_row(5, cells, all_rows) is False
+
+    def test_section_header_with_next_empty_row(self):
+        """Row with most cells filled + next row mostly empty = header (section pattern)."""
+        header_cells = self._make_cells(["경력사항", "기간", "회사명", "직급"])
+        empty_cells = self._make_cells(["", "", "", ""])
+        all_rows = [
+            {"row": 3, "cells": header_cells},
+            {"row": 4, "cells": empty_cells},
+        ]
+
+        assert _is_header_row(3, header_cells, all_rows) is True

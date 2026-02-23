@@ -118,16 +118,18 @@ def _is_header_row(ri: int, cells: list[dict], all_rows: list[dict]) -> bool:
     """Detect header rows using content patterns rather than position alone.
 
     A row is a header if:
-    - It's in the first 2 rows, OR
+    - It's in the first 2 rows AND most cells are filled (not a data input row), OR
     - It has mostly non-empty cells and the next row has mostly empty cells
       (section header pattern), OR
-    - Its cell texts look like field labels (short, no digits, common keywords)
+    - Its cell texts look like field labels AND most cells are filled
     """
     non_empty = [c for c in cells if not c.get("empty")]
     non_empty_ratio = len(non_empty) / max(len(cells), 1)
+    empty_ratio = 1 - non_empty_ratio
 
-    # First 2 rows with content are almost always headers
-    if ri < 2 and non_empty_ratio > 0.3:
+    # First 2 rows with content are almost always headers,
+    # but rows with many empty cells may be data input rows (label + empty pattern)
+    if ri < 2 and non_empty_ratio > 0.3 and empty_ratio < 0.3:
         return True
 
     # Check if this looks like a section header (most cells filled with labels)
@@ -140,7 +142,8 @@ def _is_header_row(ri: int, cells: list[dict], all_rows: list[dict]) -> bool:
             1 for c in non_empty
             if any(kw in c["text"] for kw in label_keywords)
         )
-        if label_like >= 2:
+        # Only treat as header if most cells are filled (not label + empty input pattern)
+        if label_like >= 2 and empty_ratio < 0.3:
             return True
 
         # Check if next row is mostly empty (header → data pattern)
@@ -246,15 +249,15 @@ ANALYZER_SYSTEM = """\
 
 ## 중요 규칙
 
-1. **col 인덱스는 고유 셀 순번입니다.** 표의 열-헤더 매핑을 반드시 참고하여 올바른 col에 값을 넣으세요.
-2. **병합된 셀**: span이 표시된 셀은 여러 열을 차지합니다. 하나의 col 인덱스로만 참조하세요.
-3. **헤더 행 수정 금지**: header_rows로 표시된 행은 절대 수정하지 마세요.
-4. **빈 데이터 행에만** 내용을 채우세요.
-5. 경력 항목은 **최근부터 역순**으로 배치합니다.
-6. 날짜 열: 년/월/일이 개별 열이면 각각 분리해서 넣으세요.
-7. 줄바꿈이 필요한 경우 \\n을 사용하세요 (실제 줄바꿈으로 변환됩니다).
-8. 마크다운 서식(**, #, - 등)을 제거한 순수 텍스트로 작성하세요.
-9. 이력서 원본에 있는 **사실만** 사용하세요.
+1. **절대 이력서에 없는 정보를 만들어내지 마세요.** 회사명, 학교명, 수치, 날짜, 연락처 등은 반드시 이력서 원본에 있는 사실만 사용하세요. 정보가 부족하면 해당 칸을 비워두세요.
+2. **col 인덱스는 고유 셀 순번입니다.** 표의 열-헤더 매핑을 반드시 참고하여 올바른 col에 값을 넣으세요.
+3. **병합된 셀**: span이 표시된 셀은 여러 열을 차지합니다. 하나의 col 인덱스로만 참조하세요.
+4. **헤더 행 수정 금지**: header_rows로 표시된 행은 절대 수정하지 마세요.
+5. **빈 데이터 행에만** 내용을 채우세요.
+6. 경력 항목은 **최근부터 역순**으로 배치합니다.
+7. 날짜 열: 년/월/일이 개별 열이면 각각 분리해서 넣으세요.
+8. 줄바꿈이 필요한 경우 \\n을 사용하세요 (실제 줄바꿈으로 변환됩니다).
+9. 마크다운 서식(**, #, - 등)을 제거한 순수 텍스트로 작성하세요.
 
 ## 예시
 
@@ -336,13 +339,19 @@ async def analyze_and_plan(
     """LLM analyzes DOCX structure and produces a fill plan."""
     structure_text = format_structure_for_llm(structure)
 
+    # Build resume content — fallback to sections if full_markdown is sparse
+    resume_content = resume.full_markdown
+    if not resume_content.strip() or len(resume_content.strip()) < 50:
+        parts = [f"### {s.label}\n{s.content}" for s in resume.sections]
+        resume_content = "\n\n".join(parts)
+
     prompt = f"""다음 DOCX 양식 구조를 분석하고, 이력서 내용을 채워넣을 계획을 세우세요.
 
 ## DOCX 양식 구조
 {structure_text}
 
 ## 채울 이력서 내용
-{resume.full_markdown}
+{resume_content}
 
 양식의 열-헤더 매핑을 정확히 참고하여, 각 빈 칸에 어떤 내용을 넣을지 fill_plan JSON으로 응답하세요.
 col 인덱스는 고유 셀 순번(0부터 시작)입니다."""
@@ -731,6 +740,12 @@ async def _retry_with_errors(
     structure_text = format_structure_for_llm(structure)
     errors_text = "\n".join(f"- {e}" for e in errors)
 
+    # Build resume content — fallback to sections if full_markdown is sparse
+    resume_content = resume.full_markdown
+    if not resume_content.strip() or len(resume_content.strip()) < 50:
+        parts = [f"### {s.label}\n{s.content}" for s in resume.sections]
+        resume_content = "\n\n".join(parts)
+
     prompt = f"""이전 fill_plan에 다음 오류가 발견되었습니다:
 
 {errors_text}
@@ -742,7 +757,7 @@ async def _retry_with_errors(
 {json.dumps(plan, ensure_ascii=False, indent=2)}
 
 ## 이력서 내용
-{resume.full_markdown}
+{resume_content}
 
 오류를 수정한 새로운 fill_plan JSON으로 응답하세요.
 col 인덱스는 고유 셀 순번(0부터 시작)이며, 열-헤더 매핑을 참고하세요."""

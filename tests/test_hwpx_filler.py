@@ -10,6 +10,7 @@ import pytest
 from hwpx.document import HwpxDocument
 
 from resume_tailor.templates.hwpx_filler import (
+    _is_header_row,
     _md_to_plain,
     execute_hwpx_fill_plan,
     extract_hwpx_structure,
@@ -274,3 +275,55 @@ class TestMdToPlain:
         plain = "일반 텍스트 내용입니다."
         result = _md_to_plain(plain)
         assert result == plain
+
+
+# ---------------------------------------------------------------------------
+# _is_header_row tests (HWPX version)
+# ---------------------------------------------------------------------------
+
+class TestIsHeaderRowHwpx:
+    """Tests for HWPX _is_header_row header/data row classification."""
+
+    def _make_cells(self, texts: list[str]) -> list[dict]:
+        """Build cell dicts from a list of texts (empty string = empty cell)."""
+        cells = []
+        for i, t in enumerate(texts):
+            cell: dict = {"col": i, "text": t}
+            if not t:
+                cell["empty"] = True
+            cells.append(cell)
+        return cells
+
+    def test_full_header_row_0_is_header(self):
+        """Row 0 with all cells filled is classified as header."""
+        cells = self._make_cells(["학력사항", "입학", "졸업", "학교명", "전공"])
+        all_rows = [{"row": 0, "cells": cells}]
+
+        assert _is_header_row(0, cells, all_rows) is True
+
+    def test_data_input_row_with_labels_and_empty_cells(self):
+        """Row with label keywords but many empty cells is NOT a header."""
+        cells = self._make_cells(["년 월", "년 월", "고등학교", "", "", "", "", ""])
+        all_rows = [
+            {"row": 0, "cells": self._make_cells(["학력", "입학", "졸업", "학교명", "전공", "학위", "구분", "비고"])},
+            {"row": 1, "cells": cells},
+        ]
+
+        assert _is_header_row(1, cells, all_rows) is False
+
+    def test_row_0_with_many_empty_cells_is_not_header(self):
+        """Row 0 with mostly empty cells is NOT a header."""
+        cells = self._make_cells(["년 월", "", "", "", ""])
+        all_rows = [{"row": 0, "cells": cells}]
+
+        assert _is_header_row(0, cells, all_rows) is False
+
+    def test_all_filled_label_row_is_header(self):
+        """Row with all cells containing label keywords is a header."""
+        cells = self._make_cells(["기간", "회사", "직위", "담당업무"])
+        all_rows = [
+            {"row": 0, "cells": cells},
+            {"row": 1, "cells": self._make_cells(["", "", "", ""])},
+        ]
+
+        assert _is_header_row(0, cells, all_rows) is True

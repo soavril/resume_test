@@ -238,11 +238,18 @@ def extract_hwpx_structure(path: str | Path) -> dict:
 def _is_header_row(
     ri: int, cells: list[dict], all_rows: list[dict],
 ) -> bool:
-    """Detect header rows using content patterns (same logic as smart_filler)."""
+    """Detect header rows using content patterns (same logic as smart_filler).
+
+    Rows with many empty cells are treated as data input rows, not headers,
+    even if they contain label-like keywords (e.g. "년 월" + empty slots).
+    """
     non_empty = [c for c in cells if not c.get("empty")]
     non_empty_ratio = len(non_empty) / max(len(cells), 1)
+    empty_ratio = 1 - non_empty_ratio
 
-    if ri < 2 and non_empty_ratio > 0.3:
+    # First 2 rows with content are almost always headers,
+    # but rows with many empty cells may be data input rows (label + empty pattern)
+    if ri < 2 and non_empty_ratio > 0.3 and empty_ratio < 0.3:
         return True
 
     if non_empty_ratio >= 0.5:
@@ -256,7 +263,8 @@ def _is_header_row(
             1 for c in non_empty
             if any(kw in c["text"] for kw in label_keywords)
         )
-        if label_like >= 2:
+        # Only treat as header if most cells are filled (not label + empty input pattern)
+        if label_like >= 2 and empty_ratio < 0.3:
             return True
 
         if ri + 1 < len(all_rows):
