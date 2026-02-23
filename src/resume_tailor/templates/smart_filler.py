@@ -178,10 +178,25 @@ def _build_column_header_map(table_info: dict) -> dict[int, str]:
 def _map_row_to_headers(
     data_row: dict, header_rows: list[dict],
 ) -> dict[int, str]:
-    """Map data-row TC indices to header labels via grid_start alignment."""
-    # Build grid-column → header-text lookup from all header rows
+    """Map data-row TC indices to header labels via grid_start alignment.
+
+    Only uses the nearest preceding header row to avoid cross-section mapping
+    in multi-section tables (e.g. 학력/병역/경력 in one table).
+    """
+    data_row_num = data_row["row"]
+
+    # Only consider header rows that PRECEDE this data row
+    preceding = [hr for hr in header_rows if hr["row"] < data_row_num]
+    if not preceding:
+        return {}
+
+    # Use only the nearest preceding header row
+    nearest_row_num = max(hr["row"] for hr in preceding)
+    nearest_headers = [hr for hr in preceding if hr["row"] == nearest_row_num]
+
+    # Build grid-column → header-text lookup from nearest header only
     header_grid: dict[int, str] = {}
-    for hr in header_rows:
+    for hr in nearest_headers:
         for cell in hr["cells"]:
             gs = cell.get("grid_start", cell["col"])
             span = cell.get("span", 1)
@@ -363,6 +378,8 @@ ANALYZER_SYSTEM = """\
 10. 줄바꿈이 필요한 경우 \\n을 사용하세요 (실제 줄바꿈으로 변환됩니다).
 11. 마크다운 서식(**, #, - 등)을 제거한 순수 텍스트로 작성하세요.
 12. **자기소개서/경력기술서 셀**: 원본 질문이 있는 셀에는 질문을 유지하고 그 아래에 답변을 이어서 작성하세요 (질문\\n\\n답변 형식).
+13. **서식 텍스트 보존**: 셀에 '연봉      만원', '년    월' 등의 서식 텍스트가 있으면, 빈칸 부분만 실제 데이터로 채우세요. 서식 전체를 다른 카테고리 정보로 바꾸지 마세요. 예: '연봉      만원' → '연봉 7,500 만원'. 단, 열 매핑 라벨이 서식 텍스트(예: '연봉 만원')인 경우 데이터 셀에는 서식을 반복하지 말고 실제 값만 넣으세요. 예: 열 매핑 '연봉 만원' → 데이터 셀에 '7,500' 또는 '협의 가능'.
+14. **중복 금지**: 같은 행의 여러 빈 셀에 동일한 값을 넣지 마세요. 각 빈 셀은 서로 다른 정보 항목입니다. 인접 라벨 텍스트(예: '성명', '(한글)', '주소')를 참고하여 각 셀에 맞는 값을 넣으세요.
 
 ## 예시
 
