@@ -4,9 +4,9 @@ Mirrors the DOCX filler (docx_renderer.py + smart_filler.py) for HWPX files.
 Requires python-hwpx (pip install python-hwpx).
 
 Pipeline (smart fill):
-  1. Extract HWPX structure → compact JSON description
+  1. Extract HWPX structure → compact JSON description (with merge-aware unique cell indexing)
   2. Reuse smart_filler LLM logic → fill_plan
-  3. Execute fill_plan on the HWPX via python-hwpx API
+  3. Execute fill_plan on the HWPX via direct TC element access
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 from resume_tailor.models.resume import TailoredResume
 from resume_tailor.parsers.resume_parser import EMOJI_PATTERN
@@ -22,17 +23,23 @@ logger = logging.getLogger(__name__)
 
 try:
     from hwpx.document import HwpxDocument
+    from lxml import etree as _lxml_etree
 except ImportError:
     HwpxDocument = None  # type: ignore[assignment,misc]
+    _lxml_etree = None  # type: ignore[assignment]
 
 MAX_ADD_ROWS = 20
 
+# HWPX XML namespace for paragraph elements
+_HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
+_HP = f"{{{_HP_NS}}}"
+
 
 def _require_hwpx() -> None:
-    """Raise a clear error if python-hwpx is not installed."""
-    if HwpxDocument is None:
+    """Raise a clear error if python-hwpx or lxml is not installed."""
+    if HwpxDocument is None or _lxml_etree is None:
         raise ImportError(
-            "python-hwpx가 필요합니다. 설치: pip install python-hwpx"
+            "python-hwpx와 lxml이 필요합니다. 설치: pip install python-hwpx lxml"
         )
 
 
@@ -112,15 +119,61 @@ def fill_hwpx_template(
 
 
 # ---------------------------------------------------------------------------
-# Smart fill (LLM-based)
+# Smart fill (LLM-based) — merge-aware structure extraction
 # ---------------------------------------------------------------------------
+
+
+def _get_row_tc_info(table_element, row_idx: int) -> list[dict]:
+    """Extract unique TC elements and their cellSpan info from a table row.
+
+    Returns a list of dicts with keys: col (unique index), text, span,
+    rowSpan, and empty.
+    """
+    trs = table_element.findall(f"{_HP}tr")
+    if row_idx >= len(trs):
+        return []
+
+    tr = trs[row_idx]
+    tcs = tr.findall(f"{_HP}tc")
+    cells_info = []
+
+    for unique_idx, tc in enumerate(tcs):
+        # Read cellSpan attributes
+        span_el = tc.find(f"{_HP}cellSpan")
+        col_span = 1
+        row_span = 1
+        if span_el is not None:
+            cs = span_el.get("colSpan", "1")
+            rs = span_el.get("rowSpan", "1")
+            col_span = int(cs) if cs.isdigit() else 1
+            row_span = int(rs) if rs.isdigit() else 1
+
+        # Read text from this TC
+        texts = [t.text for t in tc.findall(f".//{_HP}t") if t.text]
+        text = "".join(texts).strip()
+
+        cell_data: dict = {
+            "col": unique_idx,
+            "text": text[:300] if text else "",
+        }
+        if col_span > 1:
+            cell_data["span"] = col_span
+        if row_span > 1:
+            cell_data["rowSpan"] = row_span
+        if not text:
+            cell_data["empty"] = True
+
+        cells_info.append(cell_data)
+
+    return cells_info
 
 
 def extract_hwpx_structure(path: str | Path) -> dict:
     """Parse a HWPX file into a compact JSON structure description.
 
-    Returns the same format as smart_filler.extract_docx_structure so we can
-    reuse the LLM prompt, validation, and formatting logic.
+    Uses actual TC elements with cellSpan detection for unique cell indexing,
+    mirroring the DOCX filler's approach. This produces a clean logical view
+    instead of the raw grid (which duplicates merged cells).
     """
     _require_hwpx()
     doc = HwpxDocument.open(str(path))
@@ -157,17 +210,7 @@ def extract_hwpx_structure(path: str | Path) -> dict:
 
                 all_rows_data = []
                 for ri in range(row_count):
-                    cells_info = []
-                    for ci in range(col_count):
-                        cell = table.cell(ri, ci)
-                        cell_text = (cell.text or "").strip()
-                        cell_data: dict = {
-                            "col": ci,
-                            "text": cell_text[:300] if cell_text else "",
-                        }
-                        if not cell_text:
-                            cell_data["empty"] = True
-                        cells_info.append(cell_data)
+                    cells_info = _get_row_tc_info(table.element, ri)
                     all_rows_data.append({"row": ri, "cells": cells_info})
 
                 # Classify rows as header or data
@@ -230,7 +273,12 @@ def _is_header_row(
 def execute_hwpx_fill_plan(
     doc_path: str | Path, plan: dict, output_path: str | Path,
 ) -> Path:
-    """Execute a fill plan on a HWPX document."""
+    """Execute a fill plan on a HWPX document.
+
+    Uses unique-cell TC indexing (matching extract_hwpx_structure) to correctly
+    handle merged cells. The col index in the fill plan refers to the sequential
+    TC element index within the row, not the grid column.
+    """
     _require_hwpx()
     doc_path = Path(doc_path)
     output_path = Path(output_path)
@@ -271,10 +319,62 @@ def execute_hwpx_fill_plan(
         doc.close()
 
 
+def _set_tc_text(tc_element: Any, text: str, table: Any | None = None) -> None:
+    """Set text on a TC element using lxml directly.
+
+    Bypasses HwpxOxmlTableCell._ensure_text_element which has a stdlib/lxml
+    mismatch bug (uses ET.SubElement on lxml elements) causing TypeError on
+    empty cells that lack existing <hp:t> elements.
+    """
+    LET = _lxml_etree
+
+    # Navigate: tc -> subList -> p -> run -> t
+    sublist = tc_element.find(f"{_HP}subList")
+    if sublist is None:
+        sublist = LET.SubElement(tc_element, f"{_HP}subList", {
+            "id": "",
+            "textDirection": "HORIZONTAL",
+            "lineWrap": "BREAK",
+            "vertAlign": "CENTER",
+            "linkListIDRef": "0",
+            "linkListNextIDRef": "0",
+            "textWidth": "0",
+            "textHeight": "0",
+            "hasTextRef": "0",
+        })
+
+    paragraph = sublist.find(f"{_HP}p")
+    if paragraph is None:
+        paragraph = LET.SubElement(sublist, f"{_HP}p", {
+            "id": "0",
+            "paraPrIDRef": "0",
+            "styleIDRef": "0",
+            "pageBreak": "0",
+            "columnBreak": "0",
+        })
+
+    # Clear existing runs (to avoid duplicating text)
+    for old_run in paragraph.findall(f"{_HP}run"):
+        paragraph.remove(old_run)
+
+    run = LET.SubElement(paragraph, f"{_HP}run", {"charPrIDRef": "0"})
+    t_elem = LET.SubElement(run, f"{_HP}t")
+    t_elem.text = text
+
+    # Mark dirty so the library re-serializes this cell on save
+    tc_element.set("dirty", "1")
+    if table is not None:
+        table.mark_dirty()
+
+
 def _execute_table_fill(
     tables: list, item: dict,
 ) -> tuple[int, int]:
-    """Fill table cells according to the plan."""
+    """Fill table cells using unique-cell TC indexing.
+
+    The col index in the fill plan refers to the sequential TC element index
+    within the row (matching extract_hwpx_structure), not the grid column.
+    """
     table_idx = item.get("table_idx", 0)
     row_idx = item.get("row")
     filled = 0
@@ -291,27 +391,36 @@ def _execute_table_fill(
         )
         return 0, len(item.get("fills", []))
 
+    # Access the actual TR and TC elements
+    trs = table.element.findall(f"{_HP}tr")
+    if row_idx >= len(trs):
+        return 0, len(item.get("fills", []))
+
+    tr = trs[row_idx]
+    tcs = tr.findall(f"{_HP}tc")
+
     for fill in item.get("fills", []):
         col = fill.get("col")
         value = str(fill.get("value", ""))
         if col is None or not value:
             continue
 
-        if col >= table.column_count:
+        if col >= len(tcs):
             logger.warning(
-                "Table %d Row %d: col %d out of range (max %d)",
-                table_idx, row_idx, col, table.column_count - 1,
+                "Table %d Row %d: col %d out of range (max %d TCs)",
+                table_idx, row_idx, col, len(tcs) - 1,
             )
             failed += 1
             continue
 
         try:
             clean = _strip_md(value)
-            table.set_cell_text(row_idx, col, clean)
+            tc_element = tcs[col]
+            _set_tc_text(tc_element, clean, table=table)
             filled += 1
         except Exception:
             logger.warning(
-                "Table %d Row %d col %d: set_cell_text failed",
+                "Table %d Row %d col %d: set text failed",
                 table_idx, row_idx, col, exc_info=True,
             )
             failed += 1
@@ -416,23 +525,18 @@ def _build_replacement_map(
     return m
 
 
+def _strip_md(text: str, *, strip_emoji: bool = False) -> str:
+    """Strip markdown formatting, optionally removing emoji."""
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
+    if strip_emoji:
+        text = re.sub(EMOJI_PATTERN, "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
 def _md_to_plain(md: str) -> str:
     """Convert simple markdown to plain text for HWPX embedding."""
-    text = md
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
-    text = re.sub(EMOJI_PATTERN, "", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
-
-def _strip_md(text: str) -> str:
-    """Strip markdown formatting."""
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\*{1,3}(.+?)\*{1,3}", r"\1", text)
-    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"^-{3,}\s*$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
+    return _strip_md(md, strip_emoji=True)
