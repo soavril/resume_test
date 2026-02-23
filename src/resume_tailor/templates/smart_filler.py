@@ -71,7 +71,7 @@ def extract_docx_structure(path: str | Path) -> dict:
             seen_ids = set()
             unique_idx = 0
 
-            for cell in row.cells:
+            for i, cell in enumerate(row.cells):
                 cid = id(cell._tc)
                 if cid in seen_ids:
                     continue
@@ -84,6 +84,7 @@ def extract_docx_structure(path: str | Path) -> dict:
                 cell_data = {
                     "col": unique_idx,
                     "text": text[:300] if text else "",
+                    "grid_start": i,
                 }
                 if span > 1:
                     cell_data["span"] = span
@@ -188,17 +189,17 @@ def format_structure_for_llm(structure: dict) -> str:
             parts.append(f"  P[{p['idx']}] ({p['style']}): \"{p['text']}\"")
 
     for t in structure["tables"]:
-        parts.append(f"\n=== 표 {t['idx']} ({t['rows']}행 x {t['cols']}열) ===")
+        parts.append(f"\n=== 표 {t['idx']} ({t['rows']}행) ===")
 
         # Column-header mapping
         col_headers = _build_column_header_map(t)
         if col_headers:
-            parts.append("  열-헤더 매핑:")
+            parts.append("  열-헤더 매핑 (col = 셀 순번):")
             for col_idx in sorted(col_headers.keys()):
                 parts.append(f"    col{col_idx}: \"{col_headers[col_idx]}\"")
 
         if t["header_rows"]:
-            parts.append("  헤더 행:")
+            parts.append("  헤더 행 (수정 금지):")
             for hr in t["header_rows"]:
                 cells_str = " | ".join(
                     f"[col{c['col']}"
@@ -217,23 +218,43 @@ def format_structure_for_llm(structure: dict) -> str:
             if filled_rows:
                 parts.append("  채워진 데이터 행:")
                 for fr in filled_rows:
+                    tc_count = len(fr["cells"])
                     cells_str = " | ".join(
                         f"[col{c['col']}] \"{c['text']}\""
                         for c in fr["cells"]
                         if not c.get("empty")
                     )
-                    parts.append(f"    Row {fr['row']}: {cells_str}")
+                    parts.append(
+                        f"    Row {fr['row']} (col 범위: 0~{tc_count - 1}): "
+                        f"{cells_str}"
+                    )
 
             if empty_rows:
-                first = empty_rows[0]["row"]
-                last = empty_rows[-1]["row"]
-                # Show column structure from the first empty row
-                first_cells = empty_rows[0]["cells"]
-                col_count = len(first_cells)
-                parts.append(
-                    f"  빈 데이터 행: Row {first}~{last} "
-                    f"({len(empty_rows)}행, 각 {col_count}열)"
-                )
+                # Group by TC count since merged rows have different cell counts
+                tc_groups: dict[int, list[int]] = {}
+                for r in empty_rows:
+                    tc = len(r["cells"])
+                    tc_groups.setdefault(tc, []).append(r["row"])
+
+                if len(tc_groups) == 1:
+                    tc_count = next(iter(tc_groups))
+                    first = empty_rows[0]["row"]
+                    last = empty_rows[-1]["row"]
+                    parts.append(
+                        f"  빈 데이터 행: Row {first}~{last} "
+                        f"({len(empty_rows)}행, col 범위: 0~{tc_count - 1})"
+                    )
+                else:
+                    parts.append(
+                        f"  빈 데이터 행 ({len(empty_rows)}행, "
+                        f"행별 셀 수 다름 — 병합 구조):"
+                    )
+                    for tc_count in sorted(tc_groups):
+                        rows = tc_groups[tc_count]
+                        row_str = _format_row_ranges(rows)
+                        parts.append(
+                            f"    {row_str}: col 범위 0~{tc_count - 1}"
+                        )
 
     return "\n".join(parts)
 
@@ -242,6 +263,22 @@ def format_structure_for_llm(structure: dict) -> str:
 # Step 2: LLM produces fill_plan
 # ---------------------------------------------------------------------------
 
+def _format_row_ranges(rows: list[int]) -> str:
+    """Format row numbers into compact ranges: [1,2,3,5,6] → 'Row 1~3, 5~6'."""
+    if not rows:
+        return ""
+    ranges: list[str] = []
+    start = end = rows[0]
+    for r in rows[1:]:
+        if r == end + 1:
+            end = r
+        else:
+            ranges.append(f"{start}~{end}" if start != end else str(start))
+            start = end = r
+    ranges.append(f"{start}~{end}" if start != end else str(start))
+    return "Row " + ", ".join(ranges)
+
+
 ANALYZER_SYSTEM = """\
 당신은 DOCX 이력서 양식 분석 전문가입니다.
 
@@ -249,10 +286,10 @@ ANALYZER_SYSTEM = """\
 
 ## 중요 규칙
 
-1. **절대 이력서에 없는 정보를 만들어내지 마세요.** 회사명, 학교명, 수치, 날짜, 연락처 등은 반드시 이력서 원본에 있는 사실만 사용하세요. 정보가 부족하면 해당 칸을 비워두세요.
-2. **col 인덱스는 고유 셀 순번입니다.** 표의 열-헤더 매핑을 반드시 참고하여 올바른 col에 값을 넣으세요.
-3. **병합된 셀**: span이 표시된 셀은 여러 열을 차지합니다. 하나의 col 인덱스로만 참조하세요.
-4. **헤더 행 수정 금지**: header_rows로 표시된 행은 절대 수정하지 마세요.
+1. **절대 이력서에 없는 정보를 만들어내지 마세요.** 회사명, 학교명, 수치, 날짜, 연락처 등은 반드시 이력서 원본에 있는 사실만 사용하세요. 정보가 부족하면 해당 칸을 비워두세요 (fill_plan에서 제외).
+2. **col 인덱스는 고유 셀 순번입니다 (0부터 시작).** 이것은 셀의 물리적 위치가 아니라 해당 행 내 셀의 순서 번호입니다. 각 행마다 병합 패턴이 달라 셀 수가 다릅니다. 반드시 "col 범위: 0~N" 표시를 확인하고 그 범위 안에서만 col을 사용하세요.
+3. **병합된 셀**: span이 표시된 셀은 여러 열을 차지하지만 하나의 col 인덱스(순번)로만 참조합니다. 예: col0이 span3이면 다음 셀은 col1입니다 (col3이 아닙니다!).
+4. **헤더 행 수정 금지**: "헤더 행 (수정 금지)"으로 표시된 행의 Row 번호는 절대 fill_plan에 포함하지 마세요.
 5. **빈 데이터 행에만** 내용을 채우세요.
 6. 경력 항목은 **최근부터 역순**으로 배치합니다.
 7. 날짜 열: 년/월/일이 개별 열이면 각각 분리해서 넣으세요.

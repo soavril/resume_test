@@ -136,6 +136,7 @@ def _get_row_tc_info(table_element, row_idx: int) -> list[dict]:
     tr = trs[row_idx]
     tcs = tr.findall(f"{_HP}tc")
     cells_info = []
+    grid_col = 0
 
     for unique_idx, tc in enumerate(tcs):
         # Read cellSpan attributes
@@ -155,6 +156,7 @@ def _get_row_tc_info(table_element, row_idx: int) -> list[dict]:
         cell_data: dict = {
             "col": unique_idx,
             "text": text[:300] if text else "",
+            "grid_start": grid_col,
         }
         if col_span > 1:
             cell_data["span"] = col_span
@@ -164,6 +166,7 @@ def _get_row_tc_info(table_element, row_idx: int) -> list[dict]:
             cell_data["empty"] = True
 
         cells_info.append(cell_data)
+        grid_col += col_span
 
     return cells_info
 
@@ -276,6 +279,64 @@ def _is_header_row(
                 return True
 
     return False
+
+
+def _remap_plan_cols(structure: dict, plan: dict) -> dict:
+    """Remap grid-column indices to TC indices in the fill plan.
+
+    The LLM sometimes uses grid column numbers instead of sequential TC indices
+    in heavily merged tables. This function detects out-of-range col values and
+    remaps them using the grid_start metadata from structure extraction.
+    """
+    # Build grid→TC maps from structure
+    grid_maps: dict[tuple[int, int], dict[int, int]] = {}
+    tc_counts: dict[tuple[int, int], int] = {}
+
+    for t in structure.get("tables", []):
+        for row_data in t["header_rows"] + t["data_rows"]:
+            ri = row_data["row"]
+            key = (t["idx"], ri)
+            tc_counts[key] = len(row_data["cells"])
+            grid_map: dict[int, int] = {}
+            for cell in row_data["cells"]:
+                tc_idx = cell["col"]
+                grid_start = cell.get("grid_start", tc_idx)
+                span = cell.get("span", 1)
+                for g in range(grid_start, grid_start + span):
+                    grid_map[g] = tc_idx
+            grid_maps[key] = grid_map
+
+    remapped_count = 0
+    for item in plan.get("fill_plan", []):
+        if item.get("target") != "table":
+            continue
+        table_idx = item.get("table_idx", 0)
+        row_idx = item.get("row")
+        if row_idx is None:
+            continue
+
+        key = (table_idx, row_idx)
+        max_tc = tc_counts.get(key, 0)
+        grid_map = grid_maps.get(key, {})
+
+        for fill in item.get("fills", []):
+            col = fill.get("col")
+            if col is None or col < max_tc:
+                continue  # Already a valid TC index
+
+            # Out of range — try remapping from grid column
+            if col in grid_map:
+                old_col = col
+                fill["col"] = grid_map[col]
+                remapped_count += 1
+                logger.info(
+                    "Remapped grid col %d → TC %d (table %d row %d)",
+                    old_col, fill["col"], table_idx, row_idx,
+                )
+
+    if remapped_count:
+        logger.info("Total remapped columns: %d", remapped_count)
+    return plan
 
 
 def execute_hwpx_fill_plan(
@@ -495,6 +556,9 @@ async def smart_fill_hwpx(
 
     plan = await analyze_and_plan(llm, structure, resume, model=model)
 
+    # Remap grid-column indices to TC indices before validation
+    plan = _remap_plan_cols(structure, plan)
+
     errors: list[str] = []
     for attempt in range(max_attempts):
         errors = validate_fill_plan(structure, plan)
@@ -509,6 +573,8 @@ async def smart_fill_hwpx(
             plan = await _retry_with_errors(
                 llm, structure, resume, plan, errors, model=model,
             )
+            # Remap again after retry
+            plan = _remap_plan_cols(structure, plan)
 
     if errors:
         logger.warning(

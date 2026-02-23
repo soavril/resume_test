@@ -12,6 +12,7 @@ from hwpx.document import HwpxDocument
 from resume_tailor.templates.hwpx_filler import (
     _is_header_row,
     _md_to_plain,
+    _remap_plan_cols,
     execute_hwpx_fill_plan,
     extract_hwpx_structure,
     fill_hwpx_template,
@@ -327,3 +328,113 @@ class TestIsHeaderRowHwpx:
         ]
 
         assert _is_header_row(0, cells, all_rows) is True
+
+
+# ---------------------------------------------------------------------------
+# _remap_plan_cols tests
+# ---------------------------------------------------------------------------
+
+class TestRemapPlanCols:
+    """Tests for grid-column → TC-index remapping."""
+
+    def _make_structure(self, rows_data: list[dict]) -> dict:
+        """Build a minimal structure with one table."""
+        return {
+            "paragraphs": [],
+            "tables": [{
+                "idx": 0,
+                "rows": len(rows_data),
+                "cols": 10,
+                "header_rows": [],
+                "data_rows": rows_data,
+            }],
+        }
+
+    def test_remap_grid_col_to_tc(self):
+        """Out-of-range col that matches a grid column is remapped to TC index."""
+        # Row with 3 TCs: TC0(span3, grid0-2), TC1(span2, grid3-4), TC2(span1, grid5)
+        rows = [{"row": 0, "cells": [
+            {"col": 0, "text": "", "empty": True, "grid_start": 0, "span": 3},
+            {"col": 1, "text": "", "empty": True, "grid_start": 3, "span": 2},
+            {"col": 2, "text": "", "empty": True, "grid_start": 5},
+        ]}]
+        structure = self._make_structure(rows)
+        plan = {"fill_plan": [
+            {"target": "table", "table_idx": 0, "row": 0,
+             "fills": [{"col": 3, "value": "test"}, {"col": 5, "value": "test2"}]},
+        ]}
+
+        result = _remap_plan_cols(structure, plan)
+
+        fills = result["fill_plan"][0]["fills"]
+        assert fills[0]["col"] == 1  # grid 3 → TC 1
+        assert fills[1]["col"] == 2  # grid 5 → TC 2
+
+    def test_valid_tc_index_not_remapped(self):
+        """Col indices already within TC range are left unchanged."""
+        rows = [{"row": 0, "cells": [
+            {"col": 0, "text": "", "empty": True, "grid_start": 0, "span": 3},
+            {"col": 1, "text": "", "empty": True, "grid_start": 3, "span": 2},
+            {"col": 2, "text": "", "empty": True, "grid_start": 5},
+        ]}]
+        structure = self._make_structure(rows)
+        plan = {"fill_plan": [
+            {"target": "table", "table_idx": 0, "row": 0,
+             "fills": [{"col": 0, "value": "a"}, {"col": 2, "value": "b"}]},
+        ]}
+
+        result = _remap_plan_cols(structure, plan)
+
+        fills = result["fill_plan"][0]["fills"]
+        assert fills[0]["col"] == 0
+        assert fills[1]["col"] == 2
+
+    def test_unmappable_col_left_unchanged(self):
+        """Col that doesn't match any grid column is left unchanged."""
+        rows = [{"row": 0, "cells": [
+            {"col": 0, "text": "", "empty": True, "grid_start": 0},
+            {"col": 1, "text": "", "empty": True, "grid_start": 1},
+        ]}]
+        structure = self._make_structure(rows)
+        plan = {"fill_plan": [
+            {"target": "table", "table_idx": 0, "row": 0,
+             "fills": [{"col": 99, "value": "x"}]},
+        ]}
+
+        result = _remap_plan_cols(structure, plan)
+
+        assert result["fill_plan"][0]["fills"][0]["col"] == 99
+
+    def test_empty_plan_no_error(self):
+        """Empty fill_plan is handled without error."""
+        structure = self._make_structure([])
+        plan = {"fill_plan": []}
+
+        result = _remap_plan_cols(structure, plan)
+
+        assert result["fill_plan"] == []
+
+
+# ---------------------------------------------------------------------------
+# extract_hwpx_structure grid_start tests
+# ---------------------------------------------------------------------------
+
+class TestExtractHwpxStructureGridStart:
+    def test_grid_start_present_in_cells(self, tmp_path):
+        """Extracted structure cells include grid_start field."""
+        path = tmp_path / "doc.hwpx"
+        doc = HwpxDocument.new()
+        doc.add_paragraph("Header")
+        table = doc.add_table(rows=2, cols=3)
+        table.set_cell_text(0, 0, "A")
+        table.set_cell_text(0, 1, "B")
+        table.set_cell_text(0, 2, "C")
+        doc.save_to_path(str(path))
+        doc.close()
+
+        structure = extract_hwpx_structure(path)
+
+        for t in structure["tables"]:
+            for row_data in t["header_rows"] + t["data_rows"]:
+                for cell in row_data["cells"]:
+                    assert "grid_start" in cell

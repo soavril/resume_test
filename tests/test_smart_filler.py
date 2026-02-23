@@ -10,6 +10,7 @@ from docx import Document
 
 from resume_tailor.templates.smart_filler import (
     _build_column_header_map,
+    _format_row_ranges,
     _is_header_row,
     execute_fill_plan,
     extract_docx_structure,
@@ -415,3 +416,85 @@ class TestIsHeaderRow:
         ]
 
         assert _is_header_row(3, header_cells, all_rows) is True
+
+
+# ---------------------------------------------------------------------------
+# _format_row_ranges tests
+# ---------------------------------------------------------------------------
+
+class TestFormatRowRanges:
+    def test_single_row(self):
+        assert _format_row_ranges([3]) == "Row 3"
+
+    def test_contiguous_range(self):
+        assert _format_row_ranges([1, 2, 3]) == "Row 1~3"
+
+    def test_two_ranges(self):
+        assert _format_row_ranges([1, 2, 3, 5, 6]) == "Row 1~3, 5~6"
+
+    def test_mixed_singles_and_ranges(self):
+        assert _format_row_ranges([1, 3, 4, 5, 8]) == "Row 1, 3~5, 8"
+
+    def test_empty_list(self):
+        assert _format_row_ranges([]) == ""
+
+
+# ---------------------------------------------------------------------------
+# format_structure_for_llm — col range display tests
+# ---------------------------------------------------------------------------
+
+class TestFormatStructureColRange:
+    def test_shows_col_range_instead_of_grid_cols(self, tmp_path):
+        """format_structure_for_llm shows 'col 범위' instead of grid column count."""
+        path = tmp_path / "doc.docx"
+        doc = Document()
+        doc.add_paragraph("Test")
+        table = doc.add_table(rows=3, cols=4)
+        table.rows[0].cells[0].text = "A"
+        table.rows[0].cells[1].text = "B"
+        table.rows[0].cells[2].text = "C"
+        table.rows[0].cells[3].text = "D"
+        doc.save(str(path))
+
+        structure = extract_docx_structure(path)
+        result = format_structure_for_llm(structure)
+
+        assert "col 범위" in result
+
+    def test_no_grid_col_count_in_header(self, tmp_path):
+        """Table header should NOT show 'x N열' grid column count."""
+        path = tmp_path / "doc.docx"
+        doc = Document()
+        doc.add_paragraph("Test")
+        doc.add_table(rows=2, cols=3)
+        doc.save(str(path))
+
+        structure = extract_docx_structure(path)
+        result = format_structure_for_llm(structure)
+
+        # Should NOT contain "x 3열" pattern (grid column count)
+        import re
+        assert not re.search(r"x \d+열", result)
+
+
+# ---------------------------------------------------------------------------
+# extract_docx_structure grid_start tests
+# ---------------------------------------------------------------------------
+
+class TestExtractDocxStructureGridStart:
+    def test_grid_start_present(self, tmp_path):
+        """Extracted structure cells include grid_start field."""
+        path = tmp_path / "doc.docx"
+        doc = Document()
+        table = doc.add_table(rows=2, cols=3)
+        table.rows[0].cells[0].text = "A"
+        table.rows[0].cells[1].text = "B"
+        table.rows[0].cells[2].text = "C"
+        doc.save(str(path))
+
+        structure = extract_docx_structure(path)
+
+        for t in structure["tables"]:
+            for row_data in t["header_rows"] + t["data_rows"]:
+                for cell in row_data["cells"]:
+                    assert "grid_start" in cell
