@@ -336,6 +336,21 @@ def _remap_plan_cols(structure: dict, plan: dict) -> dict:
 
     if remapped_count:
         logger.info("Total remapped columns: %d", remapped_count)
+
+    # Deduplicate fills — multiple grid cols may map to same TC
+    for item in plan.get("fill_plan", []):
+        if item.get("target") != "table":
+            continue
+        fills = item.get("fills", [])
+        seen_cols: set[int] = set()
+        deduped: list[dict] = []
+        for fill in fills:
+            col = fill.get("col")
+            if col not in seen_cols:
+                seen_cols.add(col)
+                deduped.append(fill)
+        item["fills"] = deduped
+
     return plan
 
 
@@ -540,7 +555,7 @@ async def smart_fill_hwpx(
     resume: TailoredResume,
     output_path: str | Path,
     llm: "LLMClient",  # noqa: F821
-    max_attempts: int = 2,
+    max_attempts: int = 3,
     model: str = "claude-sonnet-4-5-20250929",
 ) -> Path:
     """Analyze any HWPX template and intelligently fill it with resume data.
