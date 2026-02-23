@@ -175,6 +175,31 @@ def _build_column_header_map(table_info: dict) -> dict[int, str]:
     return col_headers
 
 
+def _map_row_to_headers(
+    data_row: dict, header_rows: list[dict],
+) -> dict[int, str]:
+    """Map data-row TC indices to header labels via grid_start alignment."""
+    # Build grid-column → header-text lookup from all header rows
+    header_grid: dict[int, str] = {}
+    for hr in header_rows:
+        for cell in hr["cells"]:
+            gs = cell.get("grid_start", cell["col"])
+            span = cell.get("span", 1)
+            text = cell.get("text", "").strip()
+            if text:
+                for g in range(gs, gs + span):
+                    if g not in header_grid:
+                        header_grid[g] = text
+    # Map each data TC to the header that covers its grid_start
+    result: dict[int, str] = {}
+    for cell in data_row["cells"]:
+        tc_idx = cell["col"]
+        gs = cell.get("grid_start", tc_idx)
+        if gs in header_grid:
+            result[tc_idx] = header_grid[gs]
+    return result
+
+
 def format_structure_for_llm(structure: dict) -> str:
     """Format the DOCX structure into a compact readable string for the LLM.
 
@@ -219,14 +244,26 @@ def format_structure_for_llm(structure: dict) -> str:
                 parts.append("  채워진 데이터 행:")
                 for fr in filled_rows:
                     tc_count = len(fr["cells"])
-                    cells_str = " | ".join(
+                    filled_str = " | ".join(
                         f"[col{c['col']}] \"{c['text']}\""
                         for c in fr["cells"]
                         if not c.get("empty")
                     )
+                    empty_cols = [
+                        c["col"] for c in fr["cells"] if c.get("empty")
+                    ]
+                    empty_hint = ""
+                    if empty_cols:
+                        col_map = _map_row_to_headers(fr, t["header_rows"])
+                        hints = [
+                            f"col{c}(\"{col_map[c]}\")"
+                            if c in col_map else f"col{c}"
+                            for c in empty_cols
+                        ]
+                        empty_hint = f" ← 빈 셀: {', '.join(hints)}"
                     parts.append(
                         f"    Row {fr['row']} (col 범위: 0~{tc_count - 1}): "
-                        f"{cells_str}"
+                        f"{filled_str}{empty_hint}"
                     )
 
             if empty_rows:
@@ -244,6 +281,18 @@ def format_structure_for_llm(structure: dict) -> str:
                         f"  빈 데이터 행: Row {first}~{last} "
                         f"({len(empty_rows)}행, col 범위: 0~{tc_count - 1})"
                     )
+                    # Show header mapping for empty rows
+                    col_map = _map_row_to_headers(
+                        empty_rows[0], t["header_rows"],
+                    )
+                    if col_map:
+                        mapping_parts = [
+                            f"col{c}→\"{col_map[c]}\""
+                            for c in sorted(col_map)
+                        ]
+                        parts.append(
+                            f"    열 매핑: {', '.join(mapping_parts)}"
+                        )
                 else:
                     parts.append(
                         f"  빈 데이터 행 ({len(empty_rows)}행, "
@@ -255,6 +304,22 @@ def format_structure_for_llm(structure: dict) -> str:
                         parts.append(
                             f"    {row_str}: col 범위 0~{tc_count - 1}"
                         )
+                        # Show header mapping for this row group
+                        sample_row = next(
+                            r for r in empty_rows
+                            if len(r["cells"]) == tc_count
+                        )
+                        col_map = _map_row_to_headers(
+                            sample_row, t["header_rows"],
+                        )
+                        if col_map:
+                            mapping_parts = [
+                                f"col{c}→\"{col_map[c]}\""
+                                for c in sorted(col_map)
+                            ]
+                            parts.append(
+                                f"      열 매핑: {', '.join(mapping_parts)}"
+                            )
 
     return "\n".join(parts)
 
@@ -287,14 +352,17 @@ ANALYZER_SYSTEM = """\
 ## 중요 규칙
 
 1. **절대 이력서에 없는 정보를 만들어내지 마세요.** 회사명, 학교명, 수치, 날짜, 연락처 등은 반드시 이력서 원본에 있는 사실만 사용하세요. 정보가 부족하면 해당 칸을 비워두세요 (fill_plan에서 제외).
-2. **col 인덱스는 고유 셀 순번입니다 (0부터 시작).** 이것은 셀의 물리적 위치가 아니라 해당 행 내 셀의 순서 번호입니다. 각 행마다 병합 패턴이 달라 셀 수가 다릅니다. 반드시 "col 범위: 0~N" 표시를 확인하고 그 범위 안에서만 col을 사용하세요.
-3. **병합된 셀**: span이 표시된 셀은 여러 열을 차지하지만 하나의 col 인덱스(순번)로만 참조합니다. 예: col0이 span3이면 다음 셀은 col1입니다 (col3이 아닙니다!).
-4. **헤더 행 수정 금지**: "헤더 행 (수정 금지)"으로 표시된 행의 Row 번호는 절대 fill_plan에 포함하지 마세요.
-5. **빈 데이터 행에만** 내용을 채우세요.
-6. 경력 항목은 **최근부터 역순**으로 배치합니다.
-7. 날짜 열: 년/월/일이 개별 열이면 각각 분리해서 넣으세요.
-8. 줄바꿈이 필요한 경우 \\n을 사용하세요 (실제 줄바꿈으로 변환됩니다).
-9. 마크다운 서식(**, #, - 등)을 제거한 순수 텍스트로 작성하세요.
+2. **모든 빈 셀을 최대한 채우세요.** 이력서에 해당 정보가 있으면 반드시 fill_plan에 포함하세요. "열 매핑"을 참고하여 각 col에 맞는 정보를 넣으세요. 채워진 데이터 행의 빈 셀("← 빈 셀" 표시)도 채울 수 있으면 채우세요.
+3. **각 셀에는 해당 열 헤더에 맞는 단일 정보만 넣으세요.** 여러 항목을 한 셀에 합치지 마세요. 예: "회사명" 열에는 회사명만, "직급" 열에는 직급만. 장소·기관·내용이 별도 열이면 각각 분리하세요.
+4. **col 인덱스는 고유 셀 순번입니다 (0부터 시작).** 각 행마다 병합 패턴이 달라 셀 수가 다릅니다. 반드시 "col 범위: 0~N" 표시를 확인하고 그 범위 안에서만 col을 사용하세요.
+5. **병합된 셀**: span이 표시된 셀은 여러 열을 차지하지만 하나의 col 인덱스(순번)로만 참조합니다. 예: col0이 span3이면 다음 셀은 col1입니다 (col3이 아닙니다!).
+6. **헤더 행 수정 금지**: "헤더 행 (수정 금지)"으로 표시된 행의 Row 번호는 절대 fill_plan에 포함하지 마세요.
+7. **빈 데이터 행과 채워진 행의 빈 셀** 모두 채울 수 있습니다.
+8. 경력 항목은 **최근부터 역순**으로 배치합니다.
+9. 날짜 열: 년/월/일이 개별 열이면 각각 분리해서 넣으세요.
+10. 줄바꿈이 필요한 경우 \\n을 사용하세요 (실제 줄바꿈으로 변환됩니다).
+11. 마크다운 서식(**, #, - 등)을 제거한 순수 텍스트로 작성하세요.
+12. **자기소개서/경력기술서 셀**: 원본 질문이 있는 셀에는 질문을 유지하고 그 아래에 답변을 이어서 작성하세요 (질문\\n\\n답변 형식).
 
 ## 예시
 

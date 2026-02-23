@@ -427,12 +427,19 @@ def _set_tc_text(tc_element: Any, text: str, table: Any | None = None) -> None:
             "hasTextRef": "0",
         })
 
-    # Remove all paragraphs except the first — extra empty <hp:p> elements
-    # push text to the bottom of the cell in large cells.
+    # Remove only truly empty extra paragraphs.
+    # Keep paragraphs that contain template text (e.g. "(  년  개월)").
+    # This prevents text being pushed to cell bottom in large cells (40+ empty paras)
+    # while preserving template formatting in small cells.
     all_paras = sublist.findall(f"{_HP}p")
     if len(all_paras) > 1:
         for extra_p in all_paras[1:]:
-            sublist.remove(extra_p)
+            has_text = any(
+                (t_el.text or "").strip()
+                for t_el in extra_p.iter(f"{_HP}t")
+            )
+            if not has_text:
+                sublist.remove(extra_p)
 
     paragraph = sublist.find(f"{_HP}p")
     if paragraph is None:
