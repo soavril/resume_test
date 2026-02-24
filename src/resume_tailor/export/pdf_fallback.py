@@ -13,9 +13,11 @@ from fpdf import FPDF
 logger = logging.getLogger(__name__)
 
 # Korean-capable font search paths (macOS, Linux, Windows)
+# NOTE: AppleGothic.ttf is NOT compatible with fpdf2 (missing OS/2 table)
 _KOREAN_FONT_PATHS = [
     # macOS
-    "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+    "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
     # Linux (apt install fonts-nanum)
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/usr/share/fonts/truetype/nanum/NanumBarunGothic.ttf",
