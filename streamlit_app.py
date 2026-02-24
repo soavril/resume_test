@@ -61,6 +61,176 @@ st.set_page_config(
 )
 
 # ---------------------------------------------------------------------------
+# Global CSS — subtle polish without external packages
+# ---------------------------------------------------------------------------
+
+st.markdown(
+    """
+    <style>
+    /* Typography & base */
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    /* Login page centering */
+    .login-container {
+        max-width: 440px;
+        margin: 80px auto 0 auto;
+        padding: 0 24px;
+    }
+    .login-brand {
+        font-size: 1.75rem;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+        color: #0f172a;
+        margin-bottom: 6px;
+        font-family: 'DM Sans', sans-serif;
+    }
+    .login-tagline {
+        font-size: 0.95rem;
+        color: #475569;
+        line-height: 1.6;
+        margin-bottom: 32px;
+    }
+    .login-desc {
+        font-size: 0.875rem;
+        color: #64748b;
+        background: #f8fafc;
+        border-left: 3px solid #e2e8f0;
+        padding: 12px 16px;
+        border-radius: 0 6px 6px 0;
+        margin-bottom: 28px;
+        line-height: 1.7;
+    }
+
+    /* Step guide cards */
+    .step-guide {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 20px 24px;
+        margin: 16px 0;
+    }
+    .step-guide h4 {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #334155;
+        margin-bottom: 14px;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+    .step-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+    .step-num {
+        background: #0f172a;
+        color: white;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        min-width: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-top: 1px;
+    }
+    .step-text {
+        font-size: 0.9rem;
+        color: #475569;
+        line-height: 1.5;
+    }
+    .step-text strong {
+        color: #0f172a;
+        font-weight: 600;
+    }
+
+    /* Success banner */
+    .success-banner {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin: 12px 0 20px 0;
+    }
+    .success-banner .score {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #15803d;
+        letter-spacing: -0.02em;
+    }
+    .success-banner .meta {
+        font-size: 0.85rem;
+        color: #166534;
+        margin-top: 4px;
+    }
+
+    /* Download section */
+    .download-primary [data-testid="stDownloadButton"] button {
+        font-size: 1rem;
+        font-weight: 600;
+        padding: 12px 24px;
+    }
+
+    /* Time estimate notice */
+    .time-estimate {
+        font-size: 0.85rem;
+        color: #64748b;
+        background: #fafafa;
+        border: 1px solid #e5e7eb;
+        border-radius: 6px;
+        padding: 8px 14px;
+        margin-bottom: 12px;
+        display: inline-block;
+    }
+
+    /* Sidebar upload hint */
+    .sidebar-hint {
+        background: #fffbeb;
+        border: 1px solid #fde68a;
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-size: 0.875rem;
+        color: #78350f;
+        line-height: 1.6;
+        margin: 8px 0 16px 0;
+    }
+
+    /* Section dividers */
+    hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 24px 0;
+    }
+
+    /* Compact metric display */
+    .inline-meta {
+        display: inline-flex;
+        gap: 16px;
+        font-size: 0.875rem;
+        color: #475569;
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 8px 16px;
+        margin-bottom: 16px;
+    }
+    .inline-meta span {
+        font-weight: 600;
+        color: #0f172a;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ---------------------------------------------------------------------------
 # Password gate
 # ---------------------------------------------------------------------------
 
@@ -73,13 +243,27 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 if not st.session_state.authenticated:
-    st.markdown("## Resume Tailor")
-    pw = st.text_input("비밀번호를 입력하세요", type="password")
-    if pw and pw == APP_PASSWORD:
-        st.session_state.authenticated = True
-        st.rerun()
-    elif pw:
-        st.error("비밀번호가 틀립니다")
+    st.markdown(
+        """
+        <div class="login-container">
+          <div class="login-brand">Resume Tailor</div>
+          <div class="login-tagline">채용공고에 맞게 이력서를 자동으로 최적화합니다.</div>
+          <div class="login-desc">
+            회사 리서치 · 채용공고 분석 · 맞춤 이력서 작성 · 품질 검토까지<br>
+            5단계 AI 파이프라인이 60~90초 안에 처리합니다.
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    col_left, col_center, col_right = st.columns([1, 2, 1])
+    with col_center:
+        pw = st.text_input("접근 코드", type="password", placeholder="비밀번호를 입력하세요", label_visibility="collapsed")
+        if pw and pw == APP_PASSWORD:
+            st.session_state.authenticated = True
+            st.rerun()
+        elif pw:
+            st.error("접근 코드가 올바르지 않습니다. 다시 확인해주세요.")
     st.stop()
 
 # ---------------------------------------------------------------------------
@@ -87,7 +271,7 @@ if not st.session_state.authenticated:
 # ---------------------------------------------------------------------------
 
 with st.sidebar:
-    st.title("Resume Tailor")
+    st.markdown("**Resume Tailor**")
     st.caption("AI 이력서 맞춤 자동화")
 
     mode = st.radio(
@@ -108,13 +292,17 @@ with st.sidebar:
 
     st.divider()
 
+    st.markdown("**1단계 — 내 이력서 업로드**")
     resume_file = st.file_uploader(
-        "내 이력서 업로드",
+        "이력서 파일",
         type=["pdf", "docx", "doc", "txt", "md"],
         help="PDF, DOCX, TXT 또는 MD 파일 (10MB 이하)",
+        label_visibility="collapsed",
     )
+    if resume_file:
+        st.success(f"{resume_file.name} 업로드 완료")
     if resume_file and resume_file.size > 10 * 1024 * 1024:
-        st.error("이력서 파일 크기가 10MB를 초과합니다.")
+        st.error("이력서 파일 크기가 10MB를 초과합니다. 10MB 이하 파일을 사용해주세요.")
         st.stop()
 
 
@@ -168,7 +356,19 @@ def _mode_resume_tailor():
     st.header("이력서 맞춤 생성")
     st.markdown("회사 채용공고에 최적화된 이력서를 자동 생성합니다.")
 
-    company_name = st.text_input("회사명", placeholder="예: 삼성전자", max_chars=100)
+    # F2: Sidebar upload awareness — shown when resume is not yet uploaded
+    if not resume_file:
+        st.markdown(
+            """
+            <div class="sidebar-hint">
+              <strong>왼쪽 사이드바에서 이력서를 먼저 업로드하세요.</strong><br>
+              PDF, DOCX, TXT, MD 형식을 지원합니다. (10MB 이하)
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    company_name = st.text_input("2단계 — 회사명", placeholder="예: 삼성전자", max_chars=100)
 
     role_preset = st.radio(
         "직군",
@@ -185,7 +385,7 @@ def _mode_resume_tailor():
         st.session_state.jd_text_extracted = ""
 
     jd_text = st.text_area(
-        "채용공고 붙여넣기",
+        "3단계 — 채용공고 붙여넣기",
         value=st.session_state.jd_text_extracted,
         height=200,
         placeholder="채용공고 전문을 여기에 붙여넣으세요...",
@@ -216,7 +416,7 @@ def _mode_resume_tailor():
                     st.rerun()
                 except Exception:
                     logger.exception("JD image extraction failed")
-                    st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+                    st.error("채용공고 텍스트 추출에 실패했습니다. 이미지가 선명한지 확인하거나, 텍스트를 직접 복사해서 붙여넣으세요.")
 
     template_file = st.file_uploader(
         "DOCX 양식 업로드 (선택)",
@@ -229,6 +429,12 @@ def _mode_resume_tailor():
 
     # Validation
     can_run = bool(resume_file and company_name and jd_text)
+
+    if can_run:
+        st.markdown(
+            '<div class="time-estimate">생성에 약 60~90초가 소요됩니다. 생성 중에는 창을 닫지 마세요.</div>',
+            unsafe_allow_html=True,
+        )
 
     if st.button("생성 시작", type="primary", disabled=not can_run):
         if not resume_file:
@@ -308,9 +514,16 @@ def _mode_resume_tailor():
                     role_category=role_category,
                 )
             )
+        except RuntimeError as e:
+            logger.exception("Resume tailoring pipeline failed")
+            st.error(str(e))
+            return
         except Exception:
             logger.exception("Resume tailoring pipeline failed")
-            st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+            st.error(
+                "이력서 생성 중 오류가 발생했습니다. "
+                "잠시 후 다시 시도하거나, 채용공고 내용이 너무 짧거나 이미지만으로 구성된 경우 텍스트를 직접 붙여넣어 주세요."
+            )
             return
         progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
 
@@ -373,10 +586,23 @@ def _mode_resume_tailor():
         download_md = st.session_state.get("refined_resume_md", st.session_state["download_md"])
         safe_fname = st.session_state["safe_fname"]
 
-        # Show detected role and completion status
+        # Show detected role and completion status — polished success banner
         role_labels = {"tech": "개발/엔지니어링", "business": "비즈니스/전략", "design": "디자인", "general": "일반"}
         detected = result.metadata.get("role_category", "general")
-        st.success(f"직군: {role_labels.get(detected, detected)} | 점수: {result.qa.overall_score}점 | 소요: {result.elapsed_seconds:.1f}초")
+        role_label = role_labels.get(detected, detected)
+        score = result.qa.overall_score
+        elapsed = result.elapsed_seconds
+        st.markdown(
+            f"""
+            <div class="success-banner">
+              <div class="score">품질 점수 {score}점</div>
+              <div class="meta">
+                직군: {role_label} &nbsp;|&nbsp; 소요: {elapsed:.1f}초
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         # PDF theme and download
         from resume_tailor.export.pdf_renderer import render_pdf, AVAILABLE_THEMES, render_html_preview
@@ -395,21 +621,23 @@ def _mode_resume_tailor():
             logger.exception("PDF rendering failed")
             pdf_available = False
 
-        col1, col2 = st.columns(2)
-        with col1:
-            if pdf_available:
-                st.download_button(
-                    label="PDF 다운로드",
-                    data=pdf_bytes,
-                    file_name=f"{safe_fname}.pdf",
-                    mime="application/pdf",
-                    type="primary",
-                )
-            else:
-                st.warning("PDF 생성 실패 — MD를 다운로드하세요")
-        with col2:
+        # Download section — PDF primary (large), MD secondary (small)
+        if pdf_available:
             st.download_button(
-                label="MD 다운로드",
+                label="PDF 다운로드",
+                data=pdf_bytes,
+                file_name=f"{safe_fname}.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True,
+            )
+        else:
+            st.warning("PDF 렌더링에 실패했습니다. 아래 MD 파일을 다운로드하거나 이력서 내용을 복사하세요.")
+
+        col_md, col_spacer = st.columns([1, 2])
+        with col_md:
+            st.download_button(
+                label="마크다운(.md) 다운로드",
                 data=download_md.encode("utf-8"),
                 file_name=f"{safe_fname}.md",
                 mime="text/markdown",
@@ -572,14 +800,31 @@ def _mode_resume_tailor():
                 )
 
     elif not can_run:
-        missing = []
-        if not resume_file:
-            missing.append("이력서 파일")
-        if not company_name:
-            missing.append("회사명")
-        if not jd_text:
-            missing.append("채용공고")
-        st.info(f"필수 입력: {', '.join(missing)}")
+        # Empty state — clear step-by-step guide
+        st.markdown(
+            """
+            <div class="step-guide">
+              <h4>시작 방법</h4>
+              <div class="step-item">
+                <div class="step-num">1</div>
+                <div class="step-text"><strong>이력서 업로드</strong> — 왼쪽 사이드바에서 PDF, DOCX, TXT 파일을 올려주세요.</div>
+              </div>
+              <div class="step-item">
+                <div class="step-num">2</div>
+                <div class="step-text"><strong>회사명 입력</strong> — 지원하려는 회사 이름을 입력하세요. AI가 자동으로 기업 정보를 리서치합니다.</div>
+              </div>
+              <div class="step-item">
+                <div class="step-num">3</div>
+                <div class="step-text"><strong>채용공고 붙여넣기</strong> — 채용 사이트에서 공고 전문을 복사해 붙여넣으세요.</div>
+              </div>
+              <div class="step-item">
+                <div class="step-num">4</div>
+                <div class="step-text"><strong>생성 시작</strong> — 버튼을 누르면 60~90초 안에 맞춤 이력서가 완성됩니다.</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -591,11 +836,19 @@ def _mode_form_answers():
     st.header("지원서 답변 생성")
     st.markdown("채용 지원서 문항에 최적화된 답변을 자동 생성합니다.")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        company_name = st.text_input("회사명 (선택)", placeholder="예: 카카오", max_chars=100)
-    with col2:
-        pass  # spacer
+    # F2: Sidebar upload awareness
+    if not resume_file:
+        st.markdown(
+            """
+            <div class="sidebar-hint">
+              <strong>왼쪽 사이드바에서 이력서를 먼저 업로드하세요.</strong><br>
+              PDF, DOCX, TXT, MD 형식을 지원합니다. (10MB 이하)
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    company_name = st.text_input("회사명 (선택)", placeholder="예: 카카오", max_chars=100)
 
     jd_text = st.text_area(
         "채용공고 (선택)",
@@ -655,7 +908,10 @@ def _mode_form_answers():
                 structured, answers = asyncio.run(_run_all())
             except Exception:
                 logger.exception("Form answer generation failed")
-                st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+                st.error(
+                    "답변 생성 중 오류가 발생했습니다. "
+                    "이력서 파일이 올바른지, 문항 형식이 번호 또는 키워드로 시작하는지 확인해주세요."
+                )
                 return
             status.update(label="답변 생성 완료!", state="complete")
 
@@ -719,12 +975,26 @@ def _mode_form_answers():
         )
 
     elif not can_run:
-        missing = []
-        if not resume_file:
-            missing.append("이력서 파일")
-        if not questions_text:
-            missing.append("문항 텍스트")
-        st.info(f"필수 입력: {', '.join(missing)}")
+        st.markdown(
+            """
+            <div class="step-guide">
+              <h4>시작 방법</h4>
+              <div class="step-item">
+                <div class="step-num">1</div>
+                <div class="step-text"><strong>이력서 업로드</strong> — 왼쪽 사이드바에서 PDF, DOCX, TXT 파일을 올려주세요.</div>
+              </div>
+              <div class="step-item">
+                <div class="step-num">2</div>
+                <div class="step-text"><strong>회사명 / 채용공고 입력 (선택)</strong> — 입력할수록 더 정확한 맞춤 답변이 생성됩니다.</div>
+              </div>
+              <div class="step-item">
+                <div class="step-num">3</div>
+                <div class="step-text"><strong>문항 붙여넣기</strong> — 지원서의 자기소개, 지원동기 등 문항을 번호 형식으로 붙여넣으세요.</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def _render_structured_fields(structured: dict):
