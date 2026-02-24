@@ -34,6 +34,12 @@ MAX_ADD_ROWS = 20
 _HP_NS = "http://www.hancom.co.kr/hwpml/2011/paragraph"
 _HP = f"{{{_HP_NS}}}"
 
+# Placeholder patterns for post-fill auto-correction
+_NAME_PLACEHOLDERS = {"(한글)", "(한자)", "(영문)"}
+_SCHOOL_TYPE_LABELS = {
+    "고등학교", "전문대학", "대학교", "대학원(석사)", "대학원(박사)",
+}
+
 
 def _require_hwpx() -> None:
     """Raise a clear error if python-hwpx or lxml is not installed."""
@@ -553,6 +559,125 @@ def _execute_paragraph_fill(doc, item: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Post-fill auto-correction
+# ---------------------------------------------------------------------------
+
+
+def _extract_personal_data(resume: TailoredResume) -> dict[str, str]:
+    """Extract name variants from resume for placeholder replacement."""
+    data: dict[str, str] = {}
+    for section in resume.sections:
+        if section.id == "personal" or section.label in ("기본사항", "인적사항"):
+            for line in section.content.split("\n"):
+                line = line.strip()
+                if "성명" not in line and "이름" not in line:
+                    continue
+                parts = line.split(":", 1)
+                if len(parts) < 2:
+                    continue
+                name_part = parts[1].strip()
+                # Korean name: before ( or /
+                korean = re.split(r"[(/]", name_part)[0].strip()
+                if korean:
+                    data["(한글)"] = korean
+                # English name: in parentheses with capital letters
+                eng_match = re.search(r"\(([A-Z][A-Za-z\s]+)\)", name_part)
+                if eng_match:
+                    data["(영문)"] = eng_match.group(1).strip()
+            break
+    return data
+
+
+def _extract_school_names(resume: TailoredResume) -> dict[str, str]:
+    """Extract school name by type from resume.
+
+    Returns {school_type_label: actual_school_name}.
+    """
+    schools: dict[str, str] = {}
+    for section in resume.sections:
+        if section.id == "education" or section.label in ("학력사항", "학력"):
+            content = section.content
+            for school_type in ["대학원", "대학교", "전문대학", "고등학교"]:
+                pattern = rf"\S*{re.escape(school_type)}\S*"
+                matches = re.findall(pattern, content)
+                for match in matches:
+                    clean = re.sub(r"\([^)]*\)", "", match).strip()
+                    if clean and clean != school_type:
+                        if school_type == "대학원":
+                            schools.setdefault("대학원(석사)", clean)
+                            schools.setdefault("대학원(박사)", clean)
+                        else:
+                            schools[school_type] = clean
+                        break
+            break
+    return schools
+
+
+def _post_fill_corrections(
+    output_path: Path,
+    resume: TailoredResume,
+) -> None:
+    """Fix unreplaced placeholders after LLM fill.
+
+    Scans the filled HWPX for known placeholder patterns ((한글), (영문),
+    school type labels like '대학교') and replaces them with actual data
+    from the resume.  This is a safety net for LLM non-determinism.
+    """
+    personal = _extract_personal_data(resume)
+    schools = _extract_school_names(resume)
+
+    if not personal and not schools:
+        return
+
+    _require_hwpx()
+    doc = HwpxDocument.open(str(output_path))
+    try:
+        corrections = 0
+        tables = []
+        for para in doc.paragraphs:
+            if hasattr(para, "tables"):
+                tables.extend(para.tables)
+
+        for table in tables:
+            trs = table.element.findall(f"{_HP}tr")
+            for tr in trs:
+                tcs = tr.findall(f"{_HP}tc")
+                for tc in tcs:
+                    # Extract current text from TC
+                    texts = []
+                    for t_el in tc.iter(f"{_HP}t"):
+                        if t_el.text:
+                            texts.append(t_el.text)
+                    text = " ".join(texts).strip()
+                    if not text:
+                        continue
+
+                    new_text = None
+
+                    # Check name placeholders: exact match
+                    if text in _NAME_PLACEHOLDERS and text in personal:
+                        new_text = personal[text]
+
+                    # Check school type labels: exact match
+                    if text in _SCHOOL_TYPE_LABELS and text in schools:
+                        new_text = schools[text]
+
+                    if new_text and new_text != text:
+                        _set_tc_text(tc, new_text, table=table)
+                        corrections += 1
+                        logger.info(
+                            "Post-fill correction: '%s' -> '%s'",
+                            text, new_text,
+                        )
+
+        if corrections:
+            doc.save_to_path(str(output_path))
+            logger.info("Post-fill: %d placeholder(s) corrected", corrections)
+    finally:
+        doc.close()
+
+
+# ---------------------------------------------------------------------------
 # Public API — smart fill with LLM
 # ---------------------------------------------------------------------------
 
@@ -604,7 +729,15 @@ async def smart_fill_hwpx(
             len(errors), max_attempts,
         )
 
-    return execute_hwpx_fill_plan(template_path, plan, output_path)
+    result = execute_hwpx_fill_plan(template_path, plan, output_path)
+
+    # Post-fill: fix unreplaced placeholders ((한글), 대학교, etc.)
+    try:
+        _post_fill_corrections(result, resume)
+    except Exception:
+        logger.warning("Post-fill corrections failed", exc_info=True)
+
+    return result
 
 
 # ---------------------------------------------------------------------------
