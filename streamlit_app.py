@@ -48,11 +48,6 @@ from resume_tailor.templates.docx_renderer import (
     fill_docx_template,
     list_docx_placeholders,
 )
-from resume_tailor.templates.hwpx_filler import (
-    fill_hwpx_template,
-    list_hwpx_placeholders,
-    smart_fill_hwpx,
-)
 from resume_tailor.templates.smart_filler import smart_fill_docx
 
 # ---------------------------------------------------------------------------
@@ -224,9 +219,9 @@ def _mode_resume_tailor():
                     st.error("오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
 
     template_file = st.file_uploader(
-        "DOCX/HWPX 양식 업로드 (선택)",
-        type=["docx", "hwpx"],
-        help="이력서 양식 DOCX 또는 HWPX 파일 — 생성된 내용으로 양식을 채워 다운로드합니다 (10MB 이하). HWP(구형)는 한글에서 HWPX로 변환 후 업로드하세요.",
+        "DOCX 양식 업로드 (선택)",
+        type=["docx"],
+        help="이력서 양식 DOCX 파일 — 생성된 내용으로 양식을 채워 다운로드합니다 (10MB 이하).",
     )
     if template_file and template_file.size > 10 * 1024 * 1024:
         st.error("양식 파일 크기가 10MB를 초과합니다.")
@@ -365,7 +360,7 @@ def _mode_resume_tailor():
         st.session_state["safe_fname"] = safe_fname
         st.session_state["result_jd_text"] = jd_text
 
-        # Save template bytes for post-pipeline fill (DOCX or HWPX)
+        # Save template bytes for post-pipeline fill (DOCX)
         if template_file:
             st.session_state["result_template"] = template_file.getvalue()
             st.session_state["result_template_name"] = template_file.name
@@ -513,71 +508,51 @@ def _mode_resume_tailor():
                 for news in cp.recent_news[:5]:
                     st.markdown(f"- {news}")
 
-        # Template fill section (DOCX or HWPX)
+        # Template fill section (DOCX)
         if "result_template" in st.session_state:
             st.divider()
             template_bytes = st.session_state["result_template"]
             template_name = st.session_state.get("result_template_name", "template.docx")
-            is_hwpx = template_name.lower().endswith(".hwpx")
-            fmt_label = "HWPX" if is_hwpx else "DOCX"
-            suffix = ".hwpx" if is_hwpx else ".docx"
 
-            st.subheader(f"{fmt_label} 양식 채우기")
+            st.subheader("DOCX 양식 채우기")
             st.caption(f"업로드한 양식({template_name})에 생성된 이력서 내용을 자동으로 채워넣습니다.")
 
             if st.button("양식에 채워넣기", key="btn_template_fill"):
-                with st.spinner(f"{fmt_label} 양식 분석 및 채우기 중..."):
+                with st.spinner("DOCX 양식 분석 및 채우기 중..."):
                     tmp_template_path = None
                     tmp_output_path = None
                     try:
-                        tmp_template = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                        tmp_template = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
                         tmp_template.write(template_bytes)
                         tmp_template.close()
                         tmp_template_path = tmp_template.name
 
-                        tmp_output = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+                        tmp_output = tempfile.NamedTemporaryFile(delete=False, suffix=".docx")
                         tmp_output.close()
                         tmp_output_path = tmp_output.name
 
-                        if is_hwpx:
-                            placeholders = list_hwpx_placeholders(tmp_template_path)
-                            if placeholders:
-                                st.info(f"플레이스홀더 발견: {', '.join(placeholders)}")
-                                fill_hwpx_template(
-                                    tmp_template_path, result.resume, tmp_output_path,
-                                )
-                            else:
-                                st.info("플레이스홀더 없음 — AI 분석으로 양식을 채웁니다...")
-                                fill_llm = LLMClient(timeout=_get_config().llm.timeout)
-                                asyncio.run(
-                                    smart_fill_hwpx(
-                                        tmp_template_path, result.resume,
-                                        tmp_output_path, fill_llm,
-                                    )
-                                )
+                        placeholders = list_docx_placeholders(tmp_template_path)
+                        if placeholders:
+                            st.info(f"플레이스홀더 발견: {', '.join(placeholders)}")
+                            fill_docx_template(
+                                tmp_template_path, result.resume, tmp_output_path,
+                            )
                         else:
-                            placeholders = list_docx_placeholders(tmp_template_path)
-                            if placeholders:
-                                st.info(f"플레이스홀더 발견: {', '.join(placeholders)}")
-                                fill_docx_template(
-                                    tmp_template_path, result.resume, tmp_output_path,
+                            st.info("플레이스홀더 없음 — AI 분석으로 양식을 채웁니다...")
+                            fill_llm = LLMClient(timeout=_get_config().llm.timeout)
+                            asyncio.run(
+                                smart_fill_docx(
+                                    tmp_template_path, result.resume,
+                                    tmp_output_path, fill_llm,
                                 )
-                            else:
-                                st.info("플레이스홀더 없음 — AI 분석으로 양식을 채웁니다...")
-                                fill_llm = LLMClient(timeout=_get_config().llm.timeout)
-                                asyncio.run(
-                                    smart_fill_docx(
-                                        tmp_template_path, result.resume,
-                                        tmp_output_path, fill_llm,
-                                    )
-                                )
+                            )
 
                         filled_bytes = Path(tmp_output_path).read_bytes()
                         st.session_state["filled_template_bytes"] = filled_bytes
-                        st.session_state["filled_template_name"] = f"{safe_fname}{suffix}"
+                        st.session_state["filled_template_name"] = f"{safe_fname}.docx"
                     except Exception:
-                        logger.exception("%s template fill failed", fmt_label)
-                        st.error(f"{fmt_label} 양식 채우기에 실패했습니다.")
+                        logger.exception("DOCX template fill failed")
+                        st.error("DOCX 양식 채우기에 실패했습니다.")
                         st.session_state.pop("filled_template_bytes", None)
                         st.session_state.pop("filled_template_name", None)
                     finally:
@@ -587,17 +562,12 @@ def _mode_resume_tailor():
                             Path(tmp_output_path).unlink(missing_ok=True)
 
             if "filled_template_bytes" in st.session_state:
-                filled_name = st.session_state.get("filled_template_name", f"{safe_fname}{suffix}")
-                mime = (
-                    "application/hwpx"
-                    if filled_name.endswith(".hwpx")
-                    else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
+                filled_name = st.session_state.get("filled_template_name", f"{safe_fname}.docx")
                 st.download_button(
-                    label=f"{fmt_label} 다운로드",
+                    label="DOCX 다운로드",
                     data=st.session_state["filled_template_bytes"],
                     file_name=filled_name,
-                    mime=mime,
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                     type="primary",
                 )
 
