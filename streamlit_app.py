@@ -532,12 +532,14 @@ def _mode_resume_tailor():
             logger.exception("Resume tailoring pipeline failed")
             st.error(str(e))
             return
-        except Exception:
+        except Exception as e:
             logger.exception("Resume tailoring pipeline failed")
             st.error(
                 "이력서 생성 중 오류가 발생했습니다. "
                 "잠시 후 다시 시도하거나, 채용공고 내용이 너무 짧거나 이미지만으로 구성된 경우 텍스트를 직접 붙여넣어 주세요."
             )
+            with st.expander("오류 상세"):
+                st.code(f"{type(e).__name__}: {e}")
             return
         progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
 
