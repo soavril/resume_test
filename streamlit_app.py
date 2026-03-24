@@ -16,25 +16,38 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-import concurrent.futures
+import threading
 
 import streamlit as st
 from dotenv import load_dotenv
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 load_dotenv()
-
-_ASYNC_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
 def _run_async(coro):
     """Run an async coroutine from Streamlit's sync context.
 
-    Executes ``asyncio.run()`` in a separate thread so it gets a fresh event
-    loop with no Tornado/Streamlit conflicts, avoiding both the ``sniffio``
-    "unknown async library" error and potential deadlocks with
-    ``nest_asyncio`` on Streamlit Cloud.
+    Spawns a thread with Streamlit's script-run context attached so that
+    ``st.progress()`` and other widget calls work from inside the coroutine,
+    while ``asyncio.run()`` gets a fresh event loop free of Tornado conflicts.
     """
-    return _ASYNC_POOL.submit(asyncio.run, coro).result()
+    result = [None]
+    exc = [None]
+
+    def _worker():
+        try:
+            result[0] = asyncio.run(coro)
+        except BaseException as e:
+            exc[0] = e
+
+    thread = threading.Thread(target=_worker)
+    add_script_run_ctx(thread)
+    thread.start()
+    thread.join()
+    if exc[0] is not None:
+        raise exc[0]
+    return result[0]
 
 
 # Streamlit Cloud: sync st.secrets → os.environ so backend clients can read them
