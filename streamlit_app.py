@@ -23,6 +23,20 @@ from dotenv import load_dotenv
 load_dotenv()
 nest_asyncio.apply()
 
+
+def _run_async(coro):
+    """Run an async coroutine from Streamlit's sync context.
+
+    Python 3.12+ ``asyncio.run()`` uses ``asyncio.Runner`` internally, which
+    creates a *new* event loop that ``nest_asyncio`` hasn't patched.  Using
+    ``get_event_loop().run_until_complete()`` instead lets ``nest_asyncio``
+    properly handle nesting inside Streamlit's already-running loop, avoiding
+    the ``sniffio`` "unknown async library" error.
+    """
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(coro)
+
+
 # Streamlit Cloud: sync st.secrets → os.environ so backend clients can read them
 for key in ("ANTHROPIC_API_KEY", "TAVILY_API_KEY"):
     if key not in os.environ:
@@ -405,7 +419,7 @@ def _mode_resume_tailor():
             with st.spinner("텍스트 추출 중..."):
                 try:
                     llm_for_ocr = LLMClient(timeout=_get_config().llm.timeout)
-                    extracted = asyncio.run(
+                    extracted = _run_async(
                         extract_jd_from_file(
                             llm_for_ocr,
                             jd_image_file.getvalue(),
@@ -503,7 +517,7 @@ def _mode_resume_tailor():
             st.session_state.pop(key, None)
 
         try:
-            result = asyncio.run(
+            result = _run_async(
                 orchestrator.run(
                     company_name=company_name,
                     jd_text=jd_text,
@@ -675,7 +689,7 @@ def _mode_resume_tailor():
                 refiner = SentenceRefiner(_refine_llm)
                 with st.spinner("대안 생성 중..."):
                     try:
-                        suggestions = asyncio.run(
+                        suggestions = _run_async(
                             refiner.refine(
                                 selected_text=selected,
                                 full_resume=current_md,
@@ -768,7 +782,7 @@ def _mode_resume_tailor():
                         else:
                             st.info("플레이스홀더 없음 — AI 분석으로 양식을 채웁니다...")
                             fill_llm = LLMClient(timeout=_get_config().llm.timeout)
-                            asyncio.run(
+                            _run_async(
                                 smart_fill_docx(
                                     tmp_template_path, result.resume,
                                     tmp_output_path, fill_llm,
@@ -905,7 +919,7 @@ def _mode_form_answers():
         with st.status("답변 생성 중...", expanded=True) as status:
             st.write("구조화 데이터 추출 + 답변 생성 중...")
             try:
-                structured, answers = asyncio.run(_run_all())
+                structured, answers = _run_async(_run_all())
             except Exception:
                 logger.exception("Form answer generation failed")
                 st.error(
