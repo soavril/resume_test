@@ -16,25 +16,25 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-import nest_asyncio
+import concurrent.futures
+
 import streamlit as st
 from dotenv import load_dotenv
 
 load_dotenv()
-nest_asyncio.apply()
+
+_ASYNC_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 
 def _run_async(coro):
     """Run an async coroutine from Streamlit's sync context.
 
-    Python 3.12+ ``asyncio.run()`` uses ``asyncio.Runner`` internally, which
-    creates a *new* event loop that ``nest_asyncio`` hasn't patched.  Using
-    ``get_event_loop().run_until_complete()`` instead lets ``nest_asyncio``
-    properly handle nesting inside Streamlit's already-running loop, avoiding
-    the ``sniffio`` "unknown async library" error.
+    Executes ``asyncio.run()`` in a separate thread so it gets a fresh event
+    loop with no Tornado/Streamlit conflicts, avoiding both the ``sniffio``
+    "unknown async library" error and potential deadlocks with
+    ``nest_asyncio`` on Streamlit Cloud.
     """
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(coro)
+    return _ASYNC_POOL.submit(asyncio.run, coro).result()
 
 
 # Streamlit Cloud: sync st.secrets → os.environ so backend clients can read them
