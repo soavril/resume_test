@@ -16,38 +16,23 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-import threading
+import concurrent.futures
 
 import streamlit as st
 from dotenv import load_dotenv
-from streamlit.runtime.scriptrunner import add_script_run_ctx
 
 load_dotenv()
 
+_ASYNC_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
 
 def _run_async(coro):
-    """Run an async coroutine from Streamlit's sync context.
+    """Run an async coroutine in a clean thread with its own event loop.
 
-    Spawns a thread with Streamlit's script-run context attached so that
-    ``st.progress()`` and other widget calls work from inside the coroutine,
-    while ``asyncio.run()`` gets a fresh event loop free of Tornado conflicts.
+    Uses a plain thread (no Streamlit context) to avoid both sniffio
+    detection errors and Tornado event loop deadlocks.
     """
-    result = [None]
-    exc = [None]
-
-    def _worker():
-        try:
-            result[0] = asyncio.run(coro)
-        except BaseException as e:
-            exc[0] = e
-
-    thread = threading.Thread(target=_worker)
-    add_script_run_ctx(thread)
-    thread.start()
-    thread.join()
-    if exc[0] is not None:
-        raise exc[0]
-    return result[0]
+    return _ASYNC_POOL.submit(asyncio.run, coro).result()
 
 
 # Streamlit Cloud: sync st.secrets → os.environ so backend clients can read them
@@ -503,22 +488,6 @@ def _mode_resume_tailor():
             max_rewrites=config.pipeline.max_rewrites,
         )
 
-        # Run pipeline with progress
-        phases = {
-            "phase1": (0.15, "회사 리서치 + 채용공고 분석 중..."),
-            "phase1_done": (0.25, "분석 완료"),
-            "phase2": (0.35, "전략 수립 중..."),
-            "writing": (0.55, "이력서 작성 중..."),
-            "qa": (0.75, "품질 검수 중..."),
-            "rewrite": (0.85, "재작성 중..."),
-            "done": (1.0, "완료!"),
-        }
-        progress_bar = st.progress(0, text="준비 중...")
-
-        def on_phase(phase: str, detail: str):
-            pct, label = phases.get(phase, (0, detail))
-            progress_bar.progress(pct, text=detail)
-
         # Clear stale state from previous runs
         for key in (
             "refined_resume_md", "refinement_suggestions", "refinement_original",
@@ -530,17 +499,17 @@ def _mode_resume_tailor():
             st.session_state.pop(key, None)
 
         try:
-            result = _run_async(
-                orchestrator.run(
-                    company_name=company_name,
-                    jd_text=jd_text,
-                    resume_text=resume_text,
-                    company_profile=cached_profile,
-                    on_phase=on_phase,
-                    language=lang_code,
-                    role_category=role_category,
+            with st.spinner("이력서 생성 중... (약 60~90초 소요)"):
+                result = _run_async(
+                    orchestrator.run(
+                        company_name=company_name,
+                        jd_text=jd_text,
+                        resume_text=resume_text,
+                        company_profile=cached_profile,
+                        language=lang_code,
+                        role_category=role_category,
+                    )
                 )
-            )
         except RuntimeError as e:
             logger.exception("Resume tailoring pipeline failed")
             st.error(str(e))
@@ -554,7 +523,7 @@ def _mode_resume_tailor():
             with st.expander("오류 상세"):
                 st.code(f"{type(e).__name__}: {e}")
             return
-        progress_bar.progress(1.0, text=f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
+        st.success(f"완료! 점수: {result.qa.overall_score}점, 소요: {result.elapsed_seconds:.1f}초")
 
         # Save usage log
         try:
